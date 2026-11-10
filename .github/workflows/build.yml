@@ -18,44 +18,14 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Bulletproof Zip Extractor & Flattener
+    - name: Debug Project Structure
       run: |
-        echo "--- Mevcut Dosyalar ---"
+        echo "=== Kök Dizin Dosyaları ==="
         ls -la
-        
-        ZIP_FILE=$(find . -maxdepth 1 \( -name "*.zip" -o -name "*.ZIP" \) | head -n 1)
-        if [ -n "$ZIP_FILE" ]; then
-          echo "Zip bulundu: $ZIP_FILE"
-          mkdir -p temp_unzip
-          unzip -q "$ZIP_FILE" -d temp_unzip
-          
-          # 'app' klasörünü içeren alt dizini akıllıca bul
-          APP_DIR=$(find temp_unzip -type d -name "app" | head -n 1)
-          if [ -n "$APP_DIR" ]; then
-            PROJECT_ROOT=$(dirname "$APP_DIR")
-            echo "Proje ana dizini tespit edildi: $PROJECT_ROOT"
-            cp -r "$PROJECT_ROOT"/* .
-            cp -r "$PROJECT_ROOT"/.[^.]* . 2>/dev/null || true
-          else
-            echo "Dogrudan açılıyor..."
-            cp -r temp_unzip/* .
-          fi
-          rm -rf temp_unzip
-        else
-          echo "Zip dosyası yok, mevcut dosyalar kullanılıyor."
-        fi
-        
-        echo "--- Düzeltme Sonrası Kök Dizin ---"
-        ls -la
-        echo "--- App Klasörü İçeriği ---"
-        ls -la app
-
-    - name: Update Version to 1.1
-      run: |
-        if [ -f "app/build.gradle.kts" ]; then
-          sed -i 's/versionCode = [0-9]*/versionCode = 2/g' app/build.gradle.kts
-          sed -i 's/versionName = "[^"]*"/versionName = "1.1"/g' app/build.gradle.kts
-        fi
+        echo "=== App Klasörü İçeriği ==="
+        ls -la app || echo "app klasörü bulunamadı!"
+        echo "=== settings.gradle.kts içeriği ==="
+        cat settings.gradle.kts
 
     - name: Install Gradle
       run: |
