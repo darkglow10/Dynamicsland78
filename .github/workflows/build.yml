@@ -18,6 +18,24 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    - name: Find and extract zip archive
+      run: |
+        ZIP_FILE=$(find . -maxdepth 1 \( -name "*.zip" -o -name "*.ZIP" \) | head -n 1)
+        if [ -n "$ZIP_FILE" ]; then
+          echo "Extracting $ZIP_FILE..."
+          unzip -q "$ZIP_FILE" -d .
+        else
+          echo "Error: .zip dosyası bulunamadı!"
+          exit 1
+        fi
+
+    - name: Auto Update Version to 1.1
+      run: |
+        if [ -f "app/build.gradle.kts" ]; then
+          sed -i 's/versionCode = [0-9]*/versionCode = 2/g' app/build.gradle.kts
+          sed -i 's/versionName = "[^"]*"/versionName = "1.1"/g' app/build.gradle.kts
+        fi
+
     - name: Install Gradle
       run: |
         sudo apt-get update
