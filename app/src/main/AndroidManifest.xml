@@ -1,25 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-android:versionCode="2"
-    android:versionName="1.1">
-    <!-- Güncelleme kontrolü ve APK indirme -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <!-- İndirilen APK'yı yüklemek için -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Diğer uygulamaların üzerinde çizim (kullanıcı Ayarlar'dan açar) -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Foreground service (Android 14+ için tür-bazlı izin de gerekir) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- Foreground servis bildiriminin görünmesi için (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Bildirim gönderen uygulamanın ikonunu okumak için (kişisel/sideload kullanım) -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
         android:icon="@android:drawable/sym_def_app_icon"
         android:label="Dynamic Island"
         android:supportsRtl="true"
@@ -43,7 +34,6 @@ android:versionCode="2"
                 android:value="Kişisel kullanım: kamera deliği çevresinde overlay" />
         </service>
 
-        <!-- BIND_ACCESSIBILITY_SERVICE, <uses-permission> değil, servis üzerindeki 'permission' özelliğidir -->
         <service
             android:name=".IslandAccessibilityService"
             android:exported="true"
@@ -57,7 +47,6 @@ android:versionCode="2"
                 android:resource="@xml/accessibility_config" />
         </service>
 
-        <!-- Medya oturumları + güvenilir bildirim okuma için -->
         <service
             android:name=".IslandNotificationListener"
             android:exported="true"
@@ -68,7 +57,6 @@ android:versionCode="2"
             </intent-filter>
         </service>
 
-        <!-- APK yükleyiciye güvenli dosya paylaşımı -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
