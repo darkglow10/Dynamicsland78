@@ -2,7 +2,6 @@ package com.example.dynamicisland
 
 import android.graphics.Bitmap
 import android.os.SystemClock
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -56,11 +55,6 @@ private fun SettingsContent(init: IslandSettings, onSave: suspend (IslandSetting
     var version by remember { mutableIntStateOf(0) }
     var mode by remember { mutableIntStateOf(1) }            // 0 bildirim, 1 müzik
     var expanded by remember { mutableStateOf(false) }
-    val ctx = LocalContext.current
-    val versionName = remember {
-        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
-            .getOrNull() ?: "?"
-    }
 
     // Slider sürüklenirken değil, 250 ms sakinleşince kaydet
     LaunchedEffect(draft) { delay(250); onSave(draft) }
@@ -135,18 +129,6 @@ private fun SettingsContent(init: IslandSettings, onSave: suspend (IslandSetting
                     ANIM_STYLES.forEachIndexed { i, (name, desc) ->
                         RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
                     }
-                }
-            }
-
-                        // ---- Güncelleme
-            UpdateCard()
-                    onClick = {
-                        // TODO (sonraki adım): gerçek güncelleme kontrolü buraya bağlanacak
-                        Toast.makeText(ctx, "Güncelleme kontrolü yakında eklenecek", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("Güncellemeleri Kontrol Et")
                 }
             }
 
