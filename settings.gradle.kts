@@ -6,10 +6,11 @@ pluginManagement {
     }
 }
 dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
     }
 }
-rootProject.name = "Dynamic-Island"
+rootProject.name = "DynamicIsland"
 include(":app")
