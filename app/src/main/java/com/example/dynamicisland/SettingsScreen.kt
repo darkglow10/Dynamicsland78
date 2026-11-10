@@ -138,9 +138,8 @@ private fun SettingsContent(init: IslandSettings, onSave: suspend (IslandSetting
                 }
             }
 
-            // ---- Güncelleme
-            SectionCard("GÜNCELLEME", "Yüklü sürüm: $versionName") {
-                Button(
+                        // ---- Güncelleme
+            UpdateCard()
                     onClick = {
                         // TODO (sonraki adım): gerçek güncelleme kontrolü buraya bağlanacak
                         Toast.makeText(ctx, "Güncelleme kontrolü yakında eklenecek", Toast.LENGTH_SHORT).show()
