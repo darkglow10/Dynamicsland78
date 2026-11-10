@@ -18,40 +18,6 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Extract and Fix Project Structure
-      run: |
-        ZIP_FILE=$(find . -maxdepth 1 \( -name "*.zip" -o -name "*.ZIP" \) | head -n 1)
-        if [ -n "$ZIP_FILE" ]; then
-          echo "Extracting $ZIP_FILE..."
-          mkdir -p extracted_temp
-          unzip -q "$ZIP_FILE" -d extracted_temp
-
-          # İçerideki 'app' klasörünü bul ve proje kök dizinini tespit et
-          PROJECT_DIR=$(find extracted_temp -type d -name "app" | head -n 1)
-          if [ -n "$PROJECT_DIR" ]; then
-            REAL_ROOT=$(dirname "$PROJECT_DIR")
-            echo "Found project root at: $REAL_ROOT"
-            cp -r "$REAL_ROOT"/* .
-          else
-            cp -r extracted_temp/* .
-          fi
-          rm -rf extracted_temp
-        fi
-
-    - name: Ensure settings.gradle.kts exists
-      run: |
-        if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
-          echo 'include(":app")' > settings.gradle.kts
-          echo 'rootProject.name = "Dynamic-Island"' >> settings.gradle.kts
-        fi
-
-    - name: Auto Update Version to 1.1
-      run: |
-        if [ -f "app/build.gradle.kts" ]; then
-          sed -i 's/versionCode = [0-9]*/versionCode = 2/g' app/build.gradle.kts
-          sed -i 's/versionName = "[^"]*"/versionName = "1.1"/g' app/build.gradle.kts
-        fi
-
     - name: Install Gradle
       run: |
         sudo apt-get update
