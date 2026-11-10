@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- context.cacheDir/updates/ -->
+    <cache-path name="updates_cache" path="updates/" />
+    <!-- context.getExternalFilesDir(null)/updates/ -->
+    <external-files-path name="updates_external" path="updates/" />
+</paths>
