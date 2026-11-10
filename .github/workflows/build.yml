@@ -1,8 +1,8 @@
-name: Build Android APK from Zip
+name: Build Android APK
 
 on:
   push:
-  workflow_dispatch:
+    branches: [ "main" ]
 
 jobs:
   build:
@@ -18,46 +18,16 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Find and extract zip archive
+    - name: Install Gradle
       run: |
-        ZIP_FILE=$(find . -maxdepth 1 \( -name "*.zip" -o -name "*.ZIP" \) | head -n 1)
-        if [ -z "$ZIP_FILE" ]; then
-          echo "HATA: .zip dosyası bulunamadı!"
-          exit 1
-        fi
-        unzip -q "$ZIP_FILE"
+        sudo apt-get update
+        sudo apt-get install -y gradle
 
-    - name: Build APK with Gradle 8.9 & Java 17
-      env:
-        ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-      run: |
-        # Android SDK lisanslarını otomatik tanımla
-        mkdir -p $ANDROID_SDK_ROOT/licenses
-        echo "24333f8a43b682527c07440d6350f5c15e6b2c13" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-        echo "d56f5187479451eabf01fb78af6dfcb139a648b0" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
-
-        # build.gradle dosyasını bul
-        BUILD_GRADLE=$(find . -name "build.gradle" -o -name "build.gradle.kts" | head -n 1)
-        if [ -z "$BUILD_GRADLE" ]; then
-          echo "HATA: Projede build.gradle bulunamadı!"
-          find . -maxdepth 3
-          exit 1
-        fi
-        
-        PROJECT_DIR=$(dirname "$BUILD_GRADLE")
-        cd "$PROJECT_DIR"
-        
-        echo "Gradle 8.9 kuruluyor ve wrapper güncelleniyor..."
-        sudo apt-get update && sudo apt-get install -y gradle
-        
-        # Projenin gradle wrapper sürümünü 8.9'a sabitle
-        gradle wrapper --gradle-version 8.9
-        
-        chmod +x gradlew
-        ./gradlew assembleDebug
+    - name: Build APK
+      run: gradle assembleDebug
 
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: "**/app/build/outputs/apk/debug/app-debug.apk"
+        path: app/build/outputs/apk/debug/app-debug.apk
