@@ -18,25 +18,31 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Find and extract zip archive correctly
+    - name: Extract and Fix Project Structure
       run: |
         ZIP_FILE=$(find . -maxdepth 1 \( -name "*.zip" -o -name "*.ZIP" \) | head -n 1)
         if [ -n "$ZIP_FILE" ]; then
           echo "Extracting $ZIP_FILE..."
-          mkdir -p temp_extracted
-          unzip -q "$ZIP_FILE" -d temp_extracted
-          if [ -d "temp_extracted/app" ]; then
-            cp -r temp_extracted/* .
+          mkdir -p extracted_temp
+          unzip -q "$ZIP_FILE" -d extracted_temp
+
+          # İçerideki 'app' klasörünü bul ve proje kök dizinini tespit et
+          PROJECT_DIR=$(find extracted_temp -type d -name "app" | head -n 1)
+          if [ -n "$PROJECT_DIR" ]; then
+            REAL_ROOT=$(dirname "$PROJECT_DIR")
+            echo "Found project root at: $REAL_ROOT"
+            cp -r "$REAL_ROOT"/* .
           else
-            SUBDIR=$(find temp_extracted -mindepth 1 -maxdepth 1 -type d | head -n 1)
-            if [ -n "$SUBDIR" ]; then
-              cp -r "$SUBDIR"/* .
-            fi
+            cp -r extracted_temp/* .
           fi
-          rm -rf temp_extracted
-        else
-          echo "Error: .zip dosyası bulunamadı!"
-          exit 1
+          rm -rf extracted_temp
+        fi
+
+    - name: Ensure settings.gradle.kts exists
+      run: |
+        if [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
+          echo 'include(":app")' > settings.gradle.kts
+          echo 'rootProject.name = "Dynamic-Island"' >> settings.gradle.kts
         fi
 
     - name: Auto Update Version to 1.1
