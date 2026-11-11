@@ -63,9 +63,13 @@ private fun AppRoot() {
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Dynamic Island", color = MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        SegmentedTabs(listOf("Kurulum", "Ayarlar"), tab) { tab = it }
+        SegmentedTabs(listOf("Kurulum", "Ayarlar", "Sözler"), tab) { tab = it }
         Box(Modifier.weight(1f)) {
-            if (tab == 0) SetupScreen() else SettingsScreen()
+            when (tab) {
+                0 -> SetupScreen()
+                1 -> key(1) { SettingsScreen(lyricsPage = false) }
+                else -> key(2) { SettingsScreen(lyricsPage = true) }
+            }
         }
     }
 }

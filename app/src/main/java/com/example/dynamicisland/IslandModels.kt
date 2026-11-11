@@ -39,7 +39,22 @@ sealed interface IslandContent {
 data class IslandUiState(
     val content: IslandContent = IslandContent.Idle,
     val expanded: Boolean = false,
+    /** Kapalı adada şarkı sözü gösteriliyor mu (ada bu durumda daha geniş olur). Servis hesaplar. */
+    val compactLyrics: Boolean = false,
 )
+
+// ---------------------------------------------------------------- Şarkı sözü modeli
+@Immutable
+data class LyricLine(val timeMs: Long, val text: String)
+
+@Immutable
+sealed interface LyricsState {
+    data object Idle : LyricsState
+    data object Loading : LyricsState
+    data object NotFound : LyricsState
+    /** synced=false ise sözler şarkı süresine eşit aralıklarla yayılmıştır. */
+    data class Ready(val lines: List<LyricLine>, val synced: Boolean, val source: String = "") : LyricsState
+}
 
 sealed interface IslandEvent {
     data class Notification(val pkg: String, val title: String, val text: String) : IslandEvent
