@@ -107,12 +107,12 @@ fun MusicPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AlbumArt(m.art, 56.dp)                                   // sol köşe
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(m.title.ifBlank { "Bilinmeyen parça" }, color = Color.White, fontWeight = FontWeight.Bold,
-                    fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    fontSize = 18.sp, letterSpacing = (-0.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(m.artist, color = Color.White.copy(alpha = 0.60f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Equalizer(accent, height = 28.dp, barWidth = 4.dp, animate = m.playing)
+            Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing)
         }
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) PanelLyrics(cfg, lyrics, frame, artColor = m.artColor)
@@ -120,20 +120,20 @@ fun MusicPanel(
         MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 24.dp) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                CtlButton(Ctl.Rew, 30.dp) { onCommand(MediaCommand.Previous) }
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, chip = true) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                CtlButton(Ctl.Rew, 28.dp) { onCommand(MediaCommand.Previous) }
                 PlayButton(m.playing) { onCommand(MediaCommand.PlayPause) }
-                CtlButton(Ctl.Fwd, 30.dp) { onCommand(MediaCommand.Next) }
+                CtlButton(Ctl.Fwd, 28.dp) { onCommand(MediaCommand.Next) }
             }
-            CtlButton(Ctl.Cast, 26.dp) { onOutput() }
+            CtlButton(Ctl.Cast, 22.dp, chip = true) { onOutput() }
         }
     }
 }
 
 @Composable
 fun AlbumArt(art: ImageBitmap?, size: Dp) {
-    val shape = RoundedCornerShape(12.dp)
+    val shape = RoundedCornerShape(14.dp)
     if (art != null) {
         Image(bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(size).clip(shape).border(1.dp, Color.White.copy(alpha = 0.10f), shape))
@@ -167,21 +167,21 @@ private fun MusicProgress(m: IslandContent.Media, onSeek: (Long) -> Unit) {
     val gray = Color.White.copy(alpha = 0.55f)
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(fmt(shownMs), color = gray, fontSize = 12.sp, modifier = Modifier.widthIn(min = 30.dp))
+        Text(fmt(shownMs), color = gray, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.widthIn(min = 32.dp))
         Box(Modifier.weight(1f)) {
             SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null) { f, commit ->
                 if (commit) { drag = null; onSeek((f * dur).toLong()) } else drag = f
             }
         }
-        Text(if (dur > 0) "-" + fmt((dur - shownMs).coerceAtLeast(0L)) else "", color = gray, fontSize = 12.sp,
-            textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 34.dp))
+        Text(if (dur > 0) "-" + fmt((dur - shownMs).coerceAtLeast(0L)) else "", color = gray, fontSize = 11.5.sp,
+            fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 36.dp))
     }
 }
 
 @Composable
 private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, onChange: (Float, Boolean) -> Unit) {
     var w by remember { mutableIntStateOf(1) }
-    val thick by animateFloatAsState(if (dragging) 7f else 4f, spring(stiffness = Spring.StiffnessMedium), label = "seekThick")
+    val thick by animateFloatAsState(if (dragging) 8f else 5f, spring(stiffness = Spring.StiffnessMedium), label = "seekThick")
     val cb by rememberUpdatedState(onChange)
     Canvas(
         Modifier.fillMaxWidth().height(24.dp)
@@ -207,6 +207,7 @@ private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, onChan
         val th = thick.dp.toPx()
         drawRoundRect(Color.White.copy(0.22f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
         drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size((size.width * fraction).coerceAtLeast(0f), th), CornerRadius(th / 2))
+        if (thick > 5.4f) drawCircle(Color.White, radius = th * 0.85f, center = Offset((size.width * fraction).coerceIn(0f, size.width), cy))
     }
 }
 
@@ -238,13 +239,14 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, chip: Boolean = false, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
     Box(
         Modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
-            .clickable(interactionSource = src, indication = null, onClick = onClick),
+            .clickable(interactionSource = src, indication = null, onClick = onClick)
+            .then(if (chip) Modifier.padding(4.dp).background(Color.White.copy(alpha = 0.09f), CircleShape) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(size)) {
