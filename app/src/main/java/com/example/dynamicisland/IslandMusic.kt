@@ -4,6 +4,9 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
@@ -11,9 +14,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,8 +109,8 @@ fun MusicPanel(
             AlbumArt(m.art, 56.dp)                                   // sol köşe
             Column(Modifier.weight(1f)) {
                 Text(m.title.ifBlank { "Bilinmeyen parça" }, color = Color.White, fontWeight = FontWeight.Bold,
-                    fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(m.artist, color = Color(0xFFB0B0B0), fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    fontSize = 19.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Equalizer(accent, height = 28.dp, barWidth = 4.dp, animate = m.playing)
         }
@@ -117,7 +123,7 @@ fun MusicPanel(
             CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 24.dp) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
             Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
                 CtlButton(Ctl.Rew, 30.dp) { onCommand(MediaCommand.Previous) }
-                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 36.dp) { onCommand(MediaCommand.PlayPause) }
+                PlayButton(m.playing) { onCommand(MediaCommand.PlayPause) }
                 CtlButton(Ctl.Fwd, 30.dp) { onCommand(MediaCommand.Next) }
             }
             CtlButton(Ctl.Cast, 26.dp) { onOutput() }
@@ -130,7 +136,7 @@ fun AlbumArt(art: ImageBitmap?, size: Dp) {
     val shape = RoundedCornerShape(12.dp)
     if (art != null) {
         Image(bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
-            modifier = Modifier.size(size).clip(shape))
+            modifier = Modifier.size(size).clip(shape).border(1.dp, Color.White.copy(alpha = 0.10f), shape))
     } else {
         Box(Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
             Text("♪", color = Color.White.copy(alpha = 0.7f), fontSize = 22.sp)
@@ -158,12 +164,12 @@ private fun MusicProgress(m: IslandContent.Media, onSeek: (Long) -> Unit) {
     val d = drag
     val frac = d ?: if (dur > 0) m.positionAt(now).toFloat() / dur else 0f
     val shownMs = if (d != null) (d * dur).toLong() else m.positionAt(now)
-    val gray = Color(0xFFB0B0B0)
+    val gray = Color.White.copy(alpha = 0.55f)
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(fmt(shownMs), color = gray, fontSize = 12.sp, modifier = Modifier.widthIn(min = 30.dp))
         Box(Modifier.weight(1f)) {
-            SeekBar(frac.coerceIn(0f, 1f), dur > 0) { f, commit ->
+            SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null) { f, commit ->
                 if (commit) { drag = null; onSeek((f * dur).toLong()) } else drag = f
             }
         }
@@ -173,8 +179,9 @@ private fun MusicProgress(m: IslandContent.Media, onSeek: (Long) -> Unit) {
 }
 
 @Composable
-private fun SeekBar(fraction: Float, enabled: Boolean, onChange: (Float, Boolean) -> Unit) {
+private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, onChange: (Float, Boolean) -> Unit) {
     var w by remember { mutableIntStateOf(1) }
+    val thick by animateFloatAsState(if (dragging) 7f else 4f, spring(stiffness = Spring.StiffnessMedium), label = "seekThick")
     val cb by rememberUpdatedState(onChange)
     Canvas(
         Modifier.fillMaxWidth().height(24.dp)
@@ -197,9 +204,9 @@ private fun SeekBar(fraction: Float, enabled: Boolean, onChange: (Float, Boolean
             }
     ) {
         val cy = size.height / 2
-        val th = 4.dp.toPx()
-        drawRoundRect(Color.White.copy(0.25f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
-        drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size(size.width * fraction, th), CornerRadius(th / 2))
+        val th = thick.dp.toPx()
+        drawRoundRect(Color.White.copy(0.22f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
+        drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size((size.width * fraction).coerceAtLeast(0f), th), CornerRadius(th / 2))
     }
 }
 
@@ -232,7 +239,14 @@ private fun DrawScope.cast(s: Float, color: Color) {
 
 @Composable
 private fun CtlButton(kind: Ctl, size: Dp, onClick: () -> Unit) {
-    Box(Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
+    Box(
+        Modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+            .clickable(interactionSource = src, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
         Canvas(Modifier.size(size)) {
             val s = this.size.width
             fun tri(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
@@ -250,6 +264,33 @@ private fun CtlButton(kind: Ctl, size: Dp, onClick: () -> Unit) {
                 Ctl.Heart -> heart(s, false, Color.White.copy(alpha = 0.75f))
                 Ctl.HeartOn -> heart(s, true, Color(0xFFFF2D6F))
                 Ctl.Cast -> cast(s, Color.White.copy(alpha = 0.75f))
+            }
+        }
+    }
+}
+
+/** Dolu beyaz daire içinde oynat/duraklat; basınca yaylanır. 48 dp dokunma alanı, 44 dp görünür daire. */
+@Composable
+private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
+    val src = remember { MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val sc by animateFloatAsState(if (pressed) 0.88f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "playPress")
+    Box(
+        Modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+            .clickable(interactionSource = src, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(44.dp).background(Color.White, CircleShape), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.size(18.dp)) {
+                val w = size.width
+                val ink = Color(0xFF0B0B0F)
+                if (playing) {
+                    drawRoundRect(ink, Offset(0.14f * w, 0.08f * w), Size(0.24f * w, 0.84f * w), CornerRadius(0.05f * w))
+                    drawRoundRect(ink, Offset(0.62f * w, 0.08f * w), Size(0.24f * w, 0.84f * w), CornerRadius(0.05f * w))
+                } else {
+                    val p = Path().apply { moveTo(0.22f * w, 0.06f * w); lineTo(0.22f * w, 0.94f * w); lineTo(0.94f * w, 0.5f * w); close() }
+                    drawPath(p, ink)
+                }
             }
         }
     }
