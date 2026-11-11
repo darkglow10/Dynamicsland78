@@ -235,7 +235,7 @@ fun IslandPill(
                 Image(
                     bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
                     modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
-                        .size(artSize).clip(RoundedCornerShape(6.dp)).then(fade),
+                        .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
                 )
             }
             if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
@@ -266,14 +266,18 @@ private fun NotifContent(c: IslandContent.Notif, accent: Color) {
     ) {
         val icon = c.icon
         if (icon != null) {
-            Image(bitmap = icon, contentDescription = null, modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)))
+            Image(
+                bitmap = icon, contentDescription = null,
+                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp)),
+            )
         } else {
-            Box(Modifier.size(40.dp).background(accent, RoundedCornerShape(10.dp)))
+            Box(Modifier.size(42.dp).background(accent, RoundedCornerShape(12.dp)))
         }
-        Column(Modifier.weight(1f)) {
-            Text(c.title, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 15.sp,
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(c.text, color = Color(0xFFD6D6D6), fontSize = 13.sp,
+            Text(c.text, color = Color.White.copy(alpha = 0.72f), fontSize = 13.sp, lineHeight = 17.sp,
                 maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
     }
