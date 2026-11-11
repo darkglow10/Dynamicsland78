@@ -260,7 +260,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
         val screenW = wm.currentWindowMetrics.bounds.width()
         val baseX = cutCenterXOffsetPx + dp(s.offsetXDp)
-        val y = (cutCenterYPx - ch / 2).coerceAtLeast(0) + dp(s.offsetYDp) - pad
+        val y = ((cutCenterYPx - ch / 2).coerceAtLeast(0) + dp(s.offsetYDp) - pad).coerceAtLeast(-pad)
         val maxShift = ((screenW - ew - 2 * pad) / 2).coerceAtLeast(0)
         val xExp = baseX.coerceIn(-maxShift, maxShift)
         val settle = s.settleMs()
