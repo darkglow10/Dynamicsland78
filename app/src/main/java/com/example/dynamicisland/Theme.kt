@@ -12,21 +12,22 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Göz yormayan, derinlikli koyu tema (yüzeyler arasında belirgin kademe)
+// Derin, nötr-mavi koyu tema: arka plan ile yüzeyler arasında net ama sakin kademe.
+// Tek vurgu rengi (mavi) kullanılır; renk yalnızca durum bildirmek için vardır.
 private val Scheme = darkColorScheme(
-    primary = Color(0xFF8AB4FF), onPrimary = Color(0xFF0B1B3A),
-    primaryContainer = Color(0xFF243A63), onPrimaryContainer = Color(0xFFDCE7FF),
-    secondary = Color(0xFFA8B5D1), onSecondary = Color(0xFF14203A),
-    secondaryContainer = Color(0xFF28344D), onSecondaryContainer = Color(0xFFDCE7FF),
-    background = Color(0xFF0B0D12), onBackground = Color(0xFFE8EAF0),
-    surface = Color(0xFF14171E), onSurface = Color(0xFFE8EAF0),
-    surfaceVariant = Color(0xFF1C2029), onSurfaceVariant = Color(0xFF9AA2B1),
-    outline = Color(0xFF2A2F3B), outlineVariant = Color(0xFF222733),
+    primary = Color(0xFF6EA8FF), onPrimary = Color(0xFF06142E),
+    primaryContainer = Color(0xFF1B3157), onPrimaryContainer = Color(0xFFD9E6FF),
+    secondary = Color(0xFFA9B6D3), onSecondary = Color(0xFF111B31),
+    secondaryContainer = Color(0xFF232C40), onSecondaryContainer = Color(0xFFDCE5F8),
+    background = Color(0xFF07080B), onBackground = Color(0xFFECEEF3),
+    surface = Color(0xFF101217), onSurface = Color(0xFFECEEF3),
+    surfaceVariant = Color(0xFF1A1D25), onSurfaceVariant = Color(0xFF8E96A6),
+    outline = Color(0xFF2A2E39), outlineVariant = Color(0xFF1F232C),
 )
 
 private val AppTypography = Typography(
-    titleLarge = TextStyle(fontSize = 22.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.2).sp),
-    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 24.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
+    titleMedium = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.1).sp),
     bodyLarge = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.Medium),
     bodyMedium = TextStyle(fontSize = 14.sp),
     bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp),
@@ -35,9 +36,9 @@ private val AppTypography = Typography(
 )
 
 private val AppShapes = Shapes(
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(14.dp),
-    large = RoundedCornerShape(22.dp),
+    small = RoundedCornerShape(12.dp),
+    medium = RoundedCornerShape(16.dp),
+    large = RoundedCornerShape(24.dp),
 )
 
 @Composable
