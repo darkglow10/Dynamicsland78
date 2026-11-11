@@ -79,7 +79,7 @@ private fun SettingsContent(init: IslandSettings, onSave: suspend (IslandSetting
                 SectionDivider()
                 SubHeader("Konum ince ayarı")
                 SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
-                SliderRow("Dikey", draft.offsetYDp, -20f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
+                SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
             }
 
             // ---- Renk
