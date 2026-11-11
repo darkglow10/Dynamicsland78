@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -57,12 +58,16 @@ private fun Context.hasPostNotif() =
 
 @Composable
 private fun AppRoot() {
+    val cs = MaterialTheme.colorScheme
     var tab by remember { mutableIntStateOf(0) }
     Column(
         Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Dynamic Island", color = MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Dynamic Island", color = cs.onBackground, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+            Text("Kamera çevresinde canlı ada", color = cs.onSurfaceVariant, fontSize = 13.sp)
+        }
         SegmentedTabs(listOf("Kurulum", "Ayarlar", "Sözler"), tab) { tab = it }
         Box(Modifier.weight(1f)) {
             when (tab) {
@@ -90,14 +95,14 @@ private fun SetupScreen() {
 
     val canStart = overlay && postNotif
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             StatusBanner(canStart, listener)
 
-            SectionCard("İZİNLER", "Her izin Ayarlar'da tek dokunuşla verilir") {
+            SectionCard("İzinler", "Her izin Ayarlar'da tek dokunuşla verilir") {
                 PermRow("Üstte gösterme", "Adayı diğer uygulamaların üzerinde çizer", overlay, true) {
                     ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
                 }
@@ -115,64 +120,99 @@ private fun SetupScreen() {
                 }
             }
 
-            SectionCard("İPUCU", "Sideload (APK) kurulumlarında") {
+            SectionCard("İpucu", "Sideload (APK) kurulumlarında") {
                 Text(
                     "Android 13+ üzerinde bildirim erişimi ve erişilebilirlik anahtarları gri görünebilir. " +
                         "Uygulama bilgisi → ⋮ → \"Kısıtlı ayarlara izin ver\" seçeneğini açıp tekrar dene.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 19.sp,
                 )
-                OutlinedButton(onClick = {
+                IslandActionButton("Uygulama bilgisini aç", {
                     ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
-                }) { Text("Uygulama bilgisini aç") }
+                })
             }
+            Spacer(Modifier.height(8.dp))
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(
-                enabled = canStart,
-                modifier = Modifier.weight(1f).height(52.dp),
+            ActionBtn(
+                "Başlat", primary = true, enabled = canStart, modifier = Modifier.weight(1f),
                 onClick = { ContextCompat.startForegroundService(ctx, Intent(ctx, IslandOverlayService::class.java)) },
-            ) { Text("Başlat", fontSize = 16.sp) }
-            OutlinedButton(
-                modifier = Modifier.height(52.dp),
+            )
+            ActionBtn(
+                "Durdur", primary = false, enabled = true, modifier = Modifier.weight(0.6f),
                 onClick = { ctx.stopService(Intent(ctx, IslandOverlayService::class.java)) },
-            ) { Text("Durdur") }
+            )
         }
     }
 }
 
 @Composable
+private fun ActionBtn(text: String, primary: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(16.dp)
+    val bg = when { !enabled -> cs.surfaceVariant; primary -> cs.primary; else -> cs.surfaceVariant }
+    val fg = when { !enabled -> cs.onSurfaceVariant.copy(alpha = 0.5f); primary -> cs.onPrimary; else -> cs.onSurface }
+    Box(
+        modifier.height(54.dp).clip(shape).background(bg)
+            .border(1.dp, if (primary && enabled) Color.Transparent else cs.outline, shape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(text, color = fg, fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
+}
+
+@Composable
 private fun StatusBanner(canStart: Boolean, listener: Boolean) {
     val cs = MaterialTheme.colorScheme
+    val ready = canStart && listener
     val (title, desc) = when {
-        canStart && listener -> "Her şey hazır" to "Başlat'a dokunarak adayı çalıştırabilirsin."
+        ready -> "Her şey hazır" to "Başlat'a dokunarak adayı çalıştırabilirsin."
         canStart -> "Neredeyse hazır" to "Bildirim erişimi olmadan bildirim ve müzik gösterilmez."
         else -> "Eksik izinler var" to "Aşağıdaki zorunlu izinleri ver, sonra Başlat'a dokun."
     }
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
-            .background(if (canStart && listener) cs.primaryContainer else cs.surfaceVariant).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+    val dot = when { ready -> Color(0xFF4CD964); canStart -> Color(0xFFFFB340); else -> Color(0xFFFF6B5E) }
+    val shape = RoundedCornerShape(22.dp)
+    Row(
+        Modifier.fillMaxWidth().clip(shape)
+            .background(if (ready) cs.primaryContainer.copy(alpha = 0.55f) else cs.surface)
+            .border(1.dp, if (ready) cs.primary.copy(alpha = 0.35f) else cs.outlineVariant, shape)
+            .padding(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text(title, color = cs.onSurface, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        Text(desc, color = cs.onSurfaceVariant, fontSize = 13.sp)
+        Box(Modifier.size(12.dp).background(dot, CircleShape))
+        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, color = cs.onSurface, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            Text(desc, color = cs.onSurfaceVariant, fontSize = 13.sp, lineHeight = 18.sp)
+        }
     }
 }
 
 @Composable
 private fun PermRow(title: String, desc: String, granted: Boolean, required: Boolean, onOpen: () -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val ok = Color(0xFF4CD964)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(
             Modifier.size(10.dp).background(
-                when { granted -> Color(0xFF4CD964); required -> Color(0xFFFFB340); else -> cs.outline }, CircleShape
+                when { granted -> ok; required -> Color(0xFFFFB340); else -> cs.outline }, CircleShape
             )
         )
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(desc, color = cs.onSurfaceVariant, fontSize = 12.sp)
+            Text(desc, color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp)
         }
-        if (granted) Text("Hazır", color = Color(0xFF4CD964), fontSize = 13.sp, fontWeight = FontWeight.Medium)
-        else FilledTonalButton(onClick = onOpen) { Text("Aç") }
+        if (granted) {
+            Text(
+                "Hazır", color = ok, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(ok.copy(alpha = 0.14f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        } else {
+            Text(
+                "Aç", color = cs.onPrimaryContainer, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clip(RoundedCornerShape(50)).background(cs.primaryContainer)
+                    .clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
     }
 }
