@@ -47,6 +47,8 @@ import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private const val RESIZE_HIDE_MS = 80L   // pencere küçülürken içeriğin gizli kalma süresi
+
 class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private val savedStateController = SavedStateRegistryController.create(this)
@@ -75,6 +77,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var calibDy = 0               // ölçülen kayma (px)
     private var calibTries = 0
     private val calibrateRunnable = Runnable { calibrate() }
+    private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(60)?.start() }
 
     private data class WinKey(val kind: Int, val expanded: Boolean, val s: IslandSettings)
 
@@ -308,6 +311,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
         val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
         lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
+        // Pencere KÜÇÜLÜRKEN sistem eski kareyi bir an yanlış yerde gösterebiliyor (yana kayma):
+        // o birkaç kare boyunca içeriği gizleyip hemen geri getiriyoruz.
+        if (big && curW > 1 && w < curW) {
+            composeView?.let { v ->
+                v.animate().cancel()
+                v.removeCallbacks(showAgain)
+                v.alpha = 0f
+                v.postDelayed(showAgain, RESIZE_HIDE_MS)
+            }
+        }
         win.attributes = lp
         curW = w; curH = h
         if (big) {
@@ -330,6 +343,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         calibTries++
         calibDy = (calibDy + dy).coerceIn(-300, 600)
         setGeometry(curW, curH, wantX, wantY, recalibrate = false)
+    }
+
+    /** Boşta görünen adaya dokunuş yakalamasın: durum çubuğu altından normal çalışsın. */
+    private fun setTouchable(on: Boolean) {
+        val win = dialog?.window ?: return
+        val flag = WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        val blocked = (win.attributes.flags and flag) != 0
+        if (on && blocked) win.clearFlags(flag)
+        else if (!on && !blocked) win.addFlags(flag)
     }
 
     private fun setBlur(on: Boolean, s: IslandSettings) {
@@ -359,7 +381,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val settle = s.settleMs()
         val blurOk = pad == 0        // pay varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
+        setTouchable(k.kind != 0)
         when {
+            k.kind == 0 && s.showIdle -> {
+                // Boşta da görünür: küçük ada boyutunda, dokunuşsuz
+                setBlur(false, s)
+                if (curW > cw + 2 * pad || curH > ch + 2 * pad) delay(settle)
+                setGeometry(cw + 2 * pad, ch + 2 * pad, baseX, y)
+                if (blurOk) setBlur(true, s)
+            }
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
             k.expanded -> {
                 setBlur(false, s)
