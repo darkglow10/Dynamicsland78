@@ -120,13 +120,13 @@ fun MusicPanel(
         MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, chip = true) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                CtlButton(Ctl.Rew, 28.dp) { onCommand(MediaCommand.Previous) }
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 24.dp) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
+            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
+                CtlButton(Ctl.Rew, 30.dp) { onCommand(MediaCommand.Previous) }
                 PlayButton(m.playing) { onCommand(MediaCommand.PlayPause) }
-                CtlButton(Ctl.Fwd, 28.dp) { onCommand(MediaCommand.Next) }
+                CtlButton(Ctl.Fwd, 30.dp) { onCommand(MediaCommand.Next) }
             }
-            CtlButton(Ctl.Cast, 22.dp, chip = true) { onOutput() }
+            CtlButton(Ctl.Cast, 26.dp) { onOutput() }
         }
     }
 }
@@ -239,14 +239,13 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, chip: Boolean = false, onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
     Box(
         Modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
-            .clickable(interactionSource = src, indication = null, onClick = onClick)
-            .then(if (chip) Modifier.padding(4.dp).background(Color.White.copy(alpha = 0.09f), CircleShape) else Modifier),
+            .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.size(size)) {
