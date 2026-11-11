@@ -225,6 +225,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             attributes = lp
         }
         d.show()
+d.window?.decorView?.let { dv ->
+    dv.setOnApplyWindowInsetsListener { v, _ ->
+        v.setPadding(0, 0, 0, 0)
+        android.view.WindowInsets.CONSUMED
+    }
+    dv.setPadding(0, 0, 0, 0)
+    dv.findViewById<View>(android.R.id.content)?.setPadding(0, 0, 0, 0)
+    dv.requestApplyInsets()
+}
         dialog = d
     }
 
