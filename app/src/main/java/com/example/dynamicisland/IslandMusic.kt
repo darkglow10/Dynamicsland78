@@ -102,15 +102,15 @@ fun MusicPanel(
     var fav by remember(favKey) { mutableStateOf(FavoriteStore.isFav(ctx, favKey)) }
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 14.dp),
+        Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AlbumArt(m.art, 56.dp)                                   // sol köşe
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            AlbumArt(m.art, 60.dp)                                   // sol köşe
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(m.title.ifBlank { "Bilinmeyen parça" }, color = Color.White, fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp, letterSpacing = (-0.2).sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(m.artist, color = Color.White.copy(alpha = 0.60f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing)
         }
@@ -120,20 +120,20 @@ fun MusicPanel(
         MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 24.dp) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                CtlButton(Ctl.Rew, 30.dp) { onCommand(MediaCommand.Previous) }
-                PlayButton(m.playing) { onCommand(MediaCommand.PlayPause) }
-                CtlButton(Ctl.Fwd, 30.dp) { onCommand(MediaCommand.Next) }
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 16.dp, Modifier.offset(x = (-8).dp)) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                CtlButton(Ctl.Rew, 24.dp) { onCommand(MediaCommand.Previous) }
+                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp) { onCommand(MediaCommand.PlayPause) }
+                CtlButton(Ctl.Fwd, 24.dp) { onCommand(MediaCommand.Next) }
             }
-            CtlButton(Ctl.Cast, 26.dp) { onOutput() }
+            CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp)) { onOutput() }
         }
     }
 }
 
 @Composable
 fun AlbumArt(art: ImageBitmap?, size: Dp) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = RoundedCornerShape(12.dp)
     if (art != null) {
         Image(bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
             modifier = Modifier.size(size).clip(shape).border(1.dp, Color.White.copy(alpha = 0.10f), shape))
@@ -239,12 +239,12 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
     Box(
-        Modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
+        modifier.size(48.dp).graphicsLayer { scaleX = sc; scaleY = sc }.clip(CircleShape)
             .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
