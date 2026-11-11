@@ -64,6 +64,7 @@ data class IslandSettings(
     val lyricsOutsideYDp: Float = 96f,       // ekranın üstünden uzaklık
     // Renk / dolum / senkron
     val lyricsColorArgb: Int = 0xFFFFFFFF.toInt(),
+    val lyricsDynamicColor: Boolean = true,  // söz rengi albüm kapağından alınsın (kapak yoksa lyricsColorArgb)
     val lyricsDimAlpha: Float = 0.38f,       // henüz söylenmemiş kısmın opaklığı
     val lyricsFillEnabled: Boolean = true,   // söylendikçe dolsun
     val lyricsOffsetMs: Int = 0,             // + ise sözler daha erken görünür
@@ -101,7 +102,8 @@ data class IslandSettings(
             lyricsCompactSizeSp = d.lyricsCompactSizeSp, lyricsCompactWidthDp = d.lyricsCompactWidthDp,
             lyricsOutsideSizeSp = d.lyricsOutsideSizeSp, lyricsOutsideLines = d.lyricsOutsideLines,
             lyricsOutsideWidthDp = d.lyricsOutsideWidthDp, lyricsOutsideXDp = d.lyricsOutsideXDp,
-            lyricsOutsideYDp = d.lyricsOutsideYDp, lyricsColorArgb = d.lyricsColorArgb, lyricsDimAlpha = d.lyricsDimAlpha,
+            lyricsOutsideYDp = d.lyricsOutsideYDp, lyricsColorArgb = d.lyricsColorArgb, lyricsDynamicColor = d.lyricsDynamicColor,
+            lyricsDimAlpha = d.lyricsDimAlpha,
             lyricsFillEnabled = d.lyricsFillEnabled, lyricsOffsetMs = d.lyricsOffsetMs,
             lyricsGlowEnabled = d.lyricsGlowEnabled, lyricsGlowLevel = d.lyricsGlowLevel,
             lyricsAnimEnabled = d.lyricsAnimEnabled, lyricsAnimStyle = d.lyricsAnimStyle, lyricsAnimMs = d.lyricsAnimMs,
@@ -132,6 +134,7 @@ class SettingsRepository(context: Context) {
         val LY_O_SIZE = floatPreferencesKey("ly_oSize"); val LY_O_LINES = intPreferencesKey("ly_oLines")
         val LY_O_W = floatPreferencesKey("ly_oW"); val LY_O_X = floatPreferencesKey("ly_oX"); val LY_O_Y = floatPreferencesKey("ly_oY")
         val LY_COLOR = intPreferencesKey("ly_color"); val LY_DIM = floatPreferencesKey("ly_dim")
+        val LY_DYN = booleanPreferencesKey("ly_dyn")
         val LY_FILL = booleanPreferencesKey("ly_fill"); val LY_OFF = intPreferencesKey("ly_off")
         val LY_GLOW = booleanPreferencesKey("ly_glow"); val LY_GLOW_L = floatPreferencesKey("ly_glowL")
         val LY_ANIM = booleanPreferencesKey("ly_anim"); val LY_ANIM_S = intPreferencesKey("ly_animS"); val LY_ANIM_MS = intPreferencesKey("ly_animMs")
@@ -173,6 +176,7 @@ class SettingsRepository(context: Context) {
             lyricsOutsideXDp = p[K.LY_O_X] ?: d.lyricsOutsideXDp,
             lyricsOutsideYDp = p[K.LY_O_Y] ?: d.lyricsOutsideYDp,
             lyricsColorArgb = p[K.LY_COLOR] ?: d.lyricsColorArgb,
+            lyricsDynamicColor = p[K.LY_DYN] ?: d.lyricsDynamicColor,
             lyricsDimAlpha = p[K.LY_DIM] ?: d.lyricsDimAlpha,
             lyricsFillEnabled = p[K.LY_FILL] ?: d.lyricsFillEnabled,
             lyricsOffsetMs = p[K.LY_OFF] ?: d.lyricsOffsetMs,
@@ -202,7 +206,7 @@ class SettingsRepository(context: Context) {
             it[K.LY_C_SIZE] = s.lyricsCompactSizeSp; it[K.LY_C_W] = s.lyricsCompactWidthDp
             it[K.LY_O_SIZE] = s.lyricsOutsideSizeSp; it[K.LY_O_LINES] = s.lyricsOutsideLines
             it[K.LY_O_W] = s.lyricsOutsideWidthDp; it[K.LY_O_X] = s.lyricsOutsideXDp; it[K.LY_O_Y] = s.lyricsOutsideYDp
-            it[K.LY_COLOR] = s.lyricsColorArgb; it[K.LY_DIM] = s.lyricsDimAlpha
+            it[K.LY_COLOR] = s.lyricsColorArgb; it[K.LY_DIM] = s.lyricsDimAlpha; it[K.LY_DYN] = s.lyricsDynamicColor
             it[K.LY_FILL] = s.lyricsFillEnabled; it[K.LY_OFF] = s.lyricsOffsetMs
             it[K.LY_GLOW] = s.lyricsGlowEnabled; it[K.LY_GLOW_L] = s.lyricsGlowLevel
             it[K.LY_ANIM] = s.lyricsAnimEnabled; it[K.LY_ANIM_S] = s.lyricsAnimStyle; it[K.LY_ANIM_MS] = s.lyricsAnimMs
