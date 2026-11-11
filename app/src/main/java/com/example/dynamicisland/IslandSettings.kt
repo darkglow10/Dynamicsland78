@@ -42,6 +42,8 @@ data class IslandSettings(
     // Animasyon
     val animEnabled: Boolean = true,
     val animStyle: Int = 0,                  // 0 Yaylı, 1 Yumuşak, 2 Hızlı, 3 Zıplamalı, 4 Sıvı
+    // Görünürlük
+    val showIdle: Boolean = false,           // müzik/bildirim yokken de ada görünsün
 ) {
     /** Pencerenin ada etrafında bırakacağı pay (parıltı / zıplama taşması için). */
     fun windowPadDp(): Float = maxOf(
@@ -68,6 +70,7 @@ class SettingsRepository(context: Context) {
         val GLOW = booleanPreferencesKey("glow"); val GLOW_I = floatPreferencesKey("glowI")
         val BORDER = booleanPreferencesKey("border"); val BORDER_C = intPreferencesKey("borderC"); val BORDER_W = floatPreferencesKey("borderW")
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
+        val IDLE = booleanPreferencesKey("idle")
     }
 
     val flow: Flow<IslandSettings> = store.data.map { p ->
@@ -91,6 +94,7 @@ class SettingsRepository(context: Context) {
             borderWidthDp = p[K.BORDER_W] ?: d.borderWidthDp,
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
+            showIdle = p[K.IDLE] ?: d.showIdle,
         )
     }.distinctUntilChanged()
 
@@ -104,6 +108,7 @@ class SettingsRepository(context: Context) {
             it[K.GLOW] = s.glowEnabled; it[K.GLOW_I] = s.glowIntensity
             it[K.BORDER] = s.borderEnabled; it[K.BORDER_C] = s.borderColorArgb; it[K.BORDER_W] = s.borderWidthDp
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
+            it[K.IDLE] = s.showIdle
         }
     }
 }
