@@ -2,12 +2,15 @@ package com.example.dynamicisland
 
 import android.graphics.Bitmap
 import android.os.SystemClock
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -70,23 +73,25 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     // Slider sürüklenirken değil, 250 ms sakinleşince kaydet
     LaunchedEffect(draft) { delay(250); onSave(draft) }
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
         PreviewCard(draft, mode, { mode = it }, expanded) { expanded = !expanded }
 
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (lyricsPage) {
                 LyricsSections(draft, version) { draft = it }
-                OutlinedButton(onClick = { draft = draft.withLyricsDefaults(); version++ }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Söz ayarlarını varsayılana döndür")
-                }
-                Spacer(Modifier.height(16.dp))
+                FilledTonalButton(
+                    onClick = { draft = draft.withLyricsDefaults(); version++ },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) { Text("Söz ayarlarını varsayılana döndür") }
+                Spacer(Modifier.height(24.dp))
                 return@Column
             }
             // ---- Boyut
+            GroupLabel("YERLEŞİM")
             SectionCard("BOYUT", "Ölçüler dp cinsindendir") {
                 SubHeader("Kapalı (küçük) hal")
                 SliderRow("Genişlik", draft.compactWidthDp, 60f..220f, "${draft.compactWidthDp.toInt()} dp") { draft = draft.copy(compactWidthDp = it) }
@@ -107,6 +112,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
 
             // ---- Renk
+            GroupLabel("GÖRÜNÜM")
             SectionCard("RENK", "Adanın genel renk davranışı") {
                 SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
                     draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }
@@ -147,6 +153,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
 
             // ---- Animasyon
+            GroupLabel("HAREKET")
             SectionCard("ANİMASYON", "Açılma ve küçülme geçişi") {
                 SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
                 if (draft.animEnabled) {
@@ -156,10 +163,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
-            OutlinedButton(onClick = { draft = IslandSettings(); version++ }, modifier = Modifier.fillMaxWidth()) {
-                Text("Varsayılanlara dön")
-            }
-            Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = { draft = IslandSettings(); version++ },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) { Text("Varsayılanlara dön") }
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
@@ -201,13 +209,15 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
     )
     val progress = rememberIslandProgress(cfg, expanded)
     val geo = islandGeo(cfg, music, compactLy)
-    val boxH by animateDpAsState(if (expanded) geo.eh + 56.dp else 150.dp, label = "previewH")
+    val boxH by animateDpAsState(if (expanded) geo.eh + 56.dp else 150.dp, tween(320, easing = FastOutSlowInEasing), label = "previewH")
     val showOutside = music && !expanded && cfg.lyricsEnabled && cfg.lyricsOutside
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
-            Modifier.fillMaxWidth().height(boxH).clip(RoundedCornerShape(20.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF2B5876), Color(0xFF4E4376)))),
+            Modifier.fillMaxWidth().height(boxH).clip(RoundedCornerShape(24.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF2B5876), Color(0xFF4E4376))))
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onToggle),
             contentAlignment = Alignment.TopCenter,
         ) {
             Box(Modifier.padding(top = 20.dp)) {
@@ -224,10 +234,7 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
             Text("Önizlemeye dokunarak aç / kapat", color = Color.White.copy(alpha = 0.55f), fontSize = 11.sp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(mode == 0, { onMode(0) }, { Text("Bildirim") })
-            FilterChip(mode == 1, { onMode(1) }, { Text("Müzik") })
-        }
+        SegmentedTabs(listOf("Bildirim", "Müzik"), mode, onMode)
     }
 }
 
@@ -325,7 +332,9 @@ fun ColorPicker(argb: Int, onColor: (Int) -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             presets.forEach { c ->
                 Box(
-                    Modifier.size(32.dp).background(c, CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                    Modifier.size(32.dp).background(c, CircleShape)
+                        .border(if (c.toArgb() == Color.hsv(h, s, v).toArgb()) 2.dp else 1.dp,
+                            if (c.toArgb() == Color.hsv(h, s, v).toArgb()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)
                         .clickable {
                             val t = FloatArray(3); android.graphics.Color.colorToHSV(c.toArgb(), t)
                             h = t[0]; s = t[1]; v = t[2]; emit()
@@ -360,7 +369,7 @@ private fun HueBar(hue: Float, onHue: (Float) -> Unit) {
         Box(
             Modifier.align(Alignment.CenterStart)
                 .offset { IntOffset((hue / 360f * w - 10.dp.toPx()).toInt(), 0) }
-                .size(20.dp).border(2.dp, Color.White, CircleShape)
+                .size(20.dp).border(2.dp, Color.White, CircleShape).background(Color.hsv(hue, 1f, 1f), CircleShape)
         )
     }
 }
