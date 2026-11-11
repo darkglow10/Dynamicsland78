@@ -276,7 +276,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             else -> {
                 setBlur(false, s)
                 if (curW > cw + 2 * pad || curH > ch + 2 * pad) delay(settle)
-                setGeometry(cw + 2 * pad, ch + 2 * pad, baseX, y)
+                setGeometry(ew + 2 * pad, eh + 2 * pad, xExp, y)
                 if (blurOk) setBlur(true, s)
             }
         }
