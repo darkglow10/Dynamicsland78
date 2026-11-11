@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
@@ -66,6 +67,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var cutCenterYPx = 0          // kamera deliğinin dikey merkezi
     private var curW = 1
     private var curH = 1
+
+    // Konum otomatik düzeltme: pencere içeriği sistem tarafından kaydırılırsa ölçüp telafi ederiz
+    private var wantX = 0
+    private var wantY = 0                 // adanın pencere üstünün olması gereken ekran Y'si
+    private var calibDy = 0               // ölçülen kayma (px)
+    private var calibTries = 0
+    private val calibrateRunnable = Runnable { calibrate() }
 
     private data class WinKey(val kind: Int, val expanded: Boolean, val s: IslandSettings)
 
@@ -221,31 +229,66 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
             lp.width = 1; lp.height = 1; lp.x = 0; lp.y = 0
             lp.format = PixelFormat.TRANSLUCENT
+            lp.fitInsetsTypes = 0          // pencere çerçevesi durum çubuğuna göre kaymasın
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             attributes = lp
         }
+        d.window?.decorView?.let { stripInsets(it) }   // show'dan ÖNCE: ilk inset dağıtımı da yutulur
         d.show()
-d.window?.decorView?.let { dv ->
-    dv.setOnApplyWindowInsetsListener { v, _ ->
-        v.setPadding(0, 0, 0, 0)
-        android.view.WindowInsets.CONSUMED
-    }
-    dv.setPadding(0, 0, 0, 0)
-    dv.findViewById<View>(android.R.id.content)?.setPadding(0, 0, 0, 0)
-    dv.requestApplyInsets()
-}
+        d.window?.decorView?.let { stripInsets(it) }   // show'dan SONRA: kalan dolguları sıfırla
         dialog = d
     }
 
-    private fun setGeometry(w: Int, h: Int, x: Int, y: Int) {
+    /** Dialog'un decor/içerik katmanlarına eklediği tüm sistem çubuğu dolgularını sıfırlar. */
+    private fun stripInsets(dv: View) {
+        fun zero() {
+            dv.setPadding(0, 0, 0, 0)
+            (dv as? ViewGroup)?.let { g ->
+                for (i in 0 until g.childCount) g.getChildAt(i).setPadding(0, 0, 0, 0)
+            }
+            dv.findViewById<View>(android.R.id.content)?.setPadding(0, 0, 0, 0)
+        }
+        dv.setOnApplyWindowInsetsListener { _, _ ->
+            zero()
+            android.view.WindowInsets.CONSUMED
+        }
+        zero()
+        dv.requestApplyInsets()
+    }
+
+    private fun setGeometry(w: Int, h: Int, x: Int, y: Int, recalibrate: Boolean = true) {
         val win = dialog?.window ?: return
+        val big = w > 1 && h > 1
+        wantX = x; wantY = y
+        val ay = if (big) y - calibDy else y
+        val ah = if (big) h + calibDy else h
         val cur = win.attributes
-        if (cur.width == w && cur.height == h && cur.x == x && cur.y == y) return
+        if (cur.width == w && cur.height == ah && cur.x == x && cur.y == ay) return
         // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
         val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
-        lp.width = w; lp.height = h; lp.x = x; lp.y = y
+        lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
         win.attributes = lp
         curW = w; curH = h
+        if (big) {
+            if (recalibrate) calibTries = 0
+            composeView?.let { it.removeCallbacks(calibrateRunnable); it.postDelayed(calibrateRunnable, 150) }
+        }
+    }
+
+    /**
+     * Ada gerçekte olması gereken yerde mi? Değilse (sistem içeriği aşağı kaydırdıysa)
+     * pencereyi kayma kadar yukarı alıp yükseltir; böylece ada ne olursa olsun tam görünür.
+     */
+    private fun calibrate() {
+        val v = composeView ?: return
+        if (curW <= 1 || curH <= 1 || !v.isAttachedToWindow) return
+        val loc = IntArray(2)
+        v.getLocationOnScreen(loc)
+        val dy = loc[1] - wantY
+        if (abs(dy) <= 2 || calibTries >= 3) return
+        calibTries++
+        calibDy = (calibDy + dy).coerceIn(-300, 600)
+        setGeometry(curW, curH, wantX, wantY, recalibrate = false)
     }
 
     private fun setBlur(on: Boolean, s: IslandSettings) {
