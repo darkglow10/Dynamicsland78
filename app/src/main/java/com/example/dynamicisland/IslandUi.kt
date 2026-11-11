@@ -99,7 +99,7 @@ fun IslandRoot(
 
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
     Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
-        if (content !is IslandContent.Idle) {
+        if (content !is IslandContent.Idle || cfg.showIdle) {
             val music = content is IslandContent.Media
             val geo = remember(cfg, music) { islandGeo(cfg, music) }
             IslandPill(content, progress, geo, cfg, onTap, onCommand)
