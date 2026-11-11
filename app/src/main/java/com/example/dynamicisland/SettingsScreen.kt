@@ -82,6 +82,11 @@ private fun SettingsContent(init: IslandSettings, onSave: suspend (IslandSetting
                 SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
             }
 
+            // ---- Görünürlük
+            SectionCard("GÖRÜNÜRLÜK", "Ada ne zaman görünsün") {
+                SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
+            }
+
             // ---- Renk
             SectionCard("RENK", "Adanın genel renk davranışı") {
                 SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
