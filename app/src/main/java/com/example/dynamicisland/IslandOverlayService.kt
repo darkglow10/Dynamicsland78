@@ -3,6 +3,7 @@ package com.example.dynamicisland
 import android.app.Dialog
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Color
@@ -88,6 +89,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         startAsForeground()
         detectCutout()
         attachOverlay()
+        // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
+        IslandAccessibilityService.onChanged = { reattach() }
         scope.launch { IslandBus.events.collect(::handle) }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
@@ -195,7 +198,45 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    /**
+     * Erişilebilirlik servisi bağlıysa ada TYPE_ACCESSIBILITY_OVERLAY ile çizilir: bu pencere türü
+     * durum çubuğunun ÜSTÜNDE durur ve dokunuş alır. Değilse (ya da hata olursa) eski
+     * TYPE_APPLICATION_OVERLAY'e döner; o zaman durum çubuğu bölgesinde dokunuş çalışmaz.
+     */
     private fun attachOverlay() {
+        val a11y = IslandAccessibilityService.instance
+        if (a11y != null) {
+            try {
+                buildOverlay(a11y, WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+                return
+            } catch (e: Exception) {
+                detachOverlay()
+            }
+        }
+        buildOverlay(this, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+    }
+
+    private fun reattach() {
+        detachOverlay()
+        attachOverlay()
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, settings.value)) }
+    }
+
+    private fun detachOverlay() {
+        composeView?.removeCallbacks(calibrateRunnable)
+        composeView?.let { v ->
+            v.disposeComposition()
+            v.setViewTreeLifecycleOwner(null)
+            v.setViewTreeSavedStateRegistryOwner(null)
+        }
+        runCatching { dialog?.dismiss() }
+        dialog = null
+        composeView = null
+        calibDy = 0; calibTries = 0
+        curW = 1; curH = 1
+    }
+
+    private fun buildOverlay(host: Context, type: Int) {
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
@@ -207,12 +248,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
         // Dialog penceresi: Window.setBackgroundBlurRadius SADECE pencere sınırlarını bulanıklaştırır
         // (WindowManager FLAG_BLUR_BEHIND ise tüm ekranı bulanıklaştırıyordu).
-        val d = Dialog(ContextThemeWrapper(this, android.R.style.Theme_Translucent_NoTitleBar))
+        val d = Dialog(ContextThemeWrapper(host, android.R.style.Theme_Translucent_NoTitleBar))
         d.setCancelable(false)
         d.setCanceledOnTouchOutside(false)
         d.setContentView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         d.window?.apply {
-            setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            setType(type)
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
             addFlags(
@@ -346,16 +387,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Temizlik
     override fun onDestroy() {
+        IslandAccessibilityService.onChanged = null
         collapseJob?.cancel()
         scope.cancel()
-        composeView?.let { v ->
-            v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
-        }
-        runCatching { dialog?.dismiss() }
-        dialog = null
-        composeView = null
+        detachOverlay()
         iconCache.evictAll()
         super.onDestroy()
     }
