@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,47 +75,42 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     // Slider sürüklenirken değil, 250 ms sakinleşince kaydet
     LaunchedEffect(draft) { delay(250); onSave(draft) }
 
-    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // ---- Sabit canlı önizleme (kaydırırken de görünür kalır)
         PreviewCard(draft, mode, { mode = it }, expanded) { expanded = !expanded }
 
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             if (lyricsPage) {
                 LyricsSections(draft, version) { draft = it }
-                FilledTonalButton(
-                    onClick = { draft = draft.withLyricsDefaults(); version++ },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                ) { Text("Söz ayarlarını varsayılana döndür") }
-                Spacer(Modifier.height(24.dp))
+                IslandActionButton("Söz ayarlarını varsayılana döndür", { draft = draft.withLyricsDefaults(); version++ })
+                Spacer(Modifier.height(28.dp))
                 return@Column
             }
-            // ---- Boyut
-            GroupLabel("YERLEŞİM")
-            SectionCard("BOYUT", "Ölçüler dp cinsindendir") {
-                SubHeader("Kapalı (küçük) hal")
+
+            // ---- Yerleşim
+            GroupLabel("Yerleşim")
+            SectionCard("Kapalı ada", "Kamera çevresindeki küçük hal") {
                 SliderRow("Genişlik", draft.compactWidthDp, 60f..220f, "${draft.compactWidthDp.toInt()} dp") { draft = draft.copy(compactWidthDp = it) }
                 SliderRow("Yükseklik", draft.compactHeightDp, 20f..60f, "${draft.compactHeightDp.toInt()} dp") { draft = draft.copy(compactHeightDp = it) }
-                SectionDivider()
-                SubHeader("Açık (genişletilmiş) hal")
+            }
+            SectionCard("Açık ada", "Dokununca açılan genişletilmiş panel") {
                 SliderRow("Genişlik", draft.expandedWidthDp, 260f..400f, "${draft.expandedWidthDp.toInt()} dp") { draft = draft.copy(expandedWidthDp = it) }
                 SliderRow("Yükseklik", draft.expandedHeightDp, 72f..120f, "${draft.expandedHeightDp.toInt()} dp") { draft = draft.copy(expandedHeightDp = it) }
-                SectionDivider()
-                SubHeader("Konum ince ayarı")
+            }
+            SectionCard("Konum", "Kamera deliğine göre ince ayar") {
                 SliderRow("Yatay", draft.offsetXDp, -60f..60f, "${draft.offsetXDp.toInt()} dp") { draft = draft.copy(offsetXDp = it) }
                 SliderRow("Dikey", draft.offsetYDp, -60f..40f, "${draft.offsetYDp.toInt()} dp") { draft = draft.copy(offsetYDp = it) }
             }
-
-            // ---- Görünürlük
-            SectionCard("GÖRÜNÜRLÜK", "Ada ne zaman görünsün") {
+            SectionCard("Görünürlük", "Ada ne zaman görünsün") {
                 SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             }
 
-            // ---- Renk
-            GroupLabel("GÖRÜNÜM")
-            SectionCard("RENK", "Adanın genel renk davranışı") {
+            // ---- Görünüm
+            GroupLabel("Görünüm")
+            SectionCard("Renk", "Adanın genel renk davranışı") {
                 SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
                     draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }
                 SectionDivider()
@@ -121,29 +118,26 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
             }
 
-            // ---- Cam
-            SectionCard("LIQUID GLASS", "Kapalıyken ada düz, opak siyahtır") {
+            SectionCard("Liquid Glass", "Kapalıyken ada düz, opak siyahtır") {
                 SwitchRow("Cam efekti", null, draft.glassEnabled) { draft = draft.copy(glassEnabled = it) }
                 if (draft.glassEnabled) {
                     SliderRow("Şeffaflık", draft.glassAlpha, 0.10f..0.90f, "%${(draft.glassAlpha * 100).toInt()}") { draft = draft.copy(glassAlpha = it) }
                     SliderRow("Arka plan bulanıklığı", draft.blurRadiusPx.toFloat(), 0f..80f, "${draft.blurRadiusPx} px") { draft = draft.copy(blurRadiusPx = it.toInt()) }
                     if (draft.windowPadDp() > 0f) {
                         Text("Not: Parıltı veya Zıplamalı animasyon açıkken bulanıklık devre dışı kalır.",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
                     }
                 }
             }
 
-            // ---- Parıltı
-            SectionCard("PARILTI (GLOW)", "Renk, çalan şarkının kapağından alınır") {
+            SectionCard("Parıltı (Glow)", "Renk, çalan şarkının kapağından alınır") {
                 SwitchRow("Parıltı efekti", "Kapalı ve açık halde adanın etrafında", draft.glowEnabled) { draft = draft.copy(glowEnabled = it) }
                 if (draft.glowEnabled) {
                     SliderRow("Yoğunluk", draft.glowIntensity, 0.2f..1f, "%${(draft.glowIntensity * 100).toInt()}") { draft = draft.copy(glowIntensity = it) }
                 }
             }
 
-            // ---- Çerçeve
-            SectionCard("ÇERÇEVE", "Albüm renginden bağımsız, istediğin renk") {
+            SectionCard("Çerçeve", "Albüm renginden bağımsız, istediğin renk") {
                 SwitchRow("Çerçeve çizgisi", null, draft.borderEnabled) { draft = draft.copy(borderEnabled = it) }
                 if (draft.borderEnabled) {
                     SliderRow("Kalınlık", draft.borderWidthDp, 0.5f..3f, "${"%.1f".format(draft.borderWidthDp)} dp") { draft = draft.copy(borderWidthDp = it) }
@@ -152,22 +146,21 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
-            // ---- Animasyon
-            GroupLabel("HAREKET")
-            SectionCard("ANİMASYON", "Açılma ve küçülme geçişi") {
+            // ---- Hareket
+            GroupLabel("Hareket")
+            SectionCard("Animasyon", "Açılma ve küçülme geçişi") {
                 SwitchRow("Animasyonlar", "Kapatırsan ada anında açılır/kapanır", draft.animEnabled) { draft = draft.copy(animEnabled = it) }
                 if (draft.animEnabled) {
-                    ANIM_STYLES.forEachIndexed { i, (name, desc) ->
-                        RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ANIM_STYLES.forEachIndexed { i, (name, desc) ->
+                            RadioRow(name, desc, draft.animStyle == i) { draft = draft.copy(animStyle = i) }
+                        }
                     }
                 }
             }
 
-            FilledTonalButton(
-                onClick = { draft = IslandSettings(); version++ },
-                modifier = Modifier.fillMaxWidth().height(48.dp),
-            ) { Text("Varsayılanlara dön") }
-            Spacer(Modifier.height(24.dp))
+            IslandActionButton("Varsayılanlara dön", { draft = IslandSettings(); version++ })
+            Spacer(Modifier.height(28.dp))
         }
     }
 }
@@ -209,14 +202,15 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
     )
     val progress = rememberIslandProgress(cfg, expanded)
     val geo = islandGeo(cfg, music, compactLy)
-    val boxH by animateDpAsState(if (expanded) geo.eh + 56.dp else 150.dp, tween(320, easing = FastOutSlowInEasing), label = "previewH")
+    val boxH by animateDpAsState(if (expanded) geo.eh + 64.dp else 160.dp, tween(320, easing = FastOutSlowInEasing), label = "previewH")
     val showOutside = music && !expanded && cfg.lyricsEnabled && cfg.lyricsOutside
+    val shape = RoundedCornerShape(28.dp)
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(
-            Modifier.fillMaxWidth().height(boxH).clip(RoundedCornerShape(24.dp))
-                .background(Brush.linearGradient(listOf(Color(0xFF2B5876), Color(0xFF4E4376))))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            Modifier.fillMaxWidth().height(boxH).clip(shape)
+                .background(Brush.linearGradient(listOf(Color(0xFF1F4E6B), Color(0xFF3A3A78), Color(0xFF5A3470))))
+                .border(1.dp, Color.White.copy(alpha = 0.10f), shape)
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onToggle),
             contentAlignment = Alignment.TopCenter,
         ) {
@@ -226,13 +220,18 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
             if (showOutside) {
                 OutsideLyricText(
                     cfg, SAMPLE_STATE, frame,
-                    Modifier.align(Alignment.BottomCenter).padding(bottom = 26.dp)
+                    Modifier.align(Alignment.BottomCenter).padding(bottom = 46.dp)
                         .width(cfg.lyricsOutsideWidthDp.dp.coerceAtMost(320.dp)),
                     artColor = SAMPLE_COLOR,
                 )
             }
-            Text("Önizlemeye dokunarak aç / kapat", color = Color.White.copy(alpha = 0.55f), fontSize = 11.sp,
-                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp))
+            Text(
+                if (expanded) "Küçültmek için dokun" else "Açmak için dokun",
+                color = Color.White.copy(alpha = 0.78f), fontSize = 11.sp, fontWeight = FontWeight.Medium,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)
+                    .clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.30f))
+                    .padding(horizontal = 12.dp, vertical = 5.dp),
+            )
         }
         SegmentedTabs(listOf("Bildirim", "Müzik"), mode, onMode)
     }
@@ -242,36 +241,38 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
 @Composable
 private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSettings) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    SectionCard("ŞARKI SÖZLERİ", "Önce LRCLIB, bulunamazsa NetEase'te aranır") {
+    SectionCard("Şarkı sözleri", "Önce LRCLIB, bulunamazsa NetEase'te aranır") {
         SwitchRow("Şarkı sözleri",
             "Başlık, sanatçı ve süre sunucuya gönderilir. Bildirimi olan her oynatıcıyla çalışır (Spotify, YouTube Music, Yandex Müzik, VK…).",
             draft.lyricsEnabled) { set(draft.copy(lyricsEnabled = it)) }
         if (draft.lyricsEnabled) {
             Text("Senkron söz yoksa düz sözler şarkı süresine yayılır. Aranırken \"Şarkı sözü aranıyor…\", bulunamazsa \"Şarkı sözü bulunamadı\" yazar.",
-                color = cs.onSurfaceVariant, fontSize = 12.sp)
+                color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
     if (!draft.lyricsEnabled) return
 
-    SectionCard("NEREDE GÖRÜNSÜN", "İstediğin kadarını aynı anda açabilirsin") {
+    SectionCard("Nerede görünsün", "İstediğin kadarını aynı anda açabilirsin") {
         SwitchRow("Genişletilmiş adada", "Şarkı adı ile ilerleme çubuğu arasında", draft.lyricsInPanel) { set(draft.copy(lyricsInPanel = it)) }
+        SectionDivider()
         SwitchRow("Kapalı adada (ortada)", "Albüm kapağı ile equalizer arasındaki boşlukta; ada sözler için genişler", draft.lyricsCompact) { set(draft.copy(lyricsCompact = it)) }
+        SectionDivider()
         SwitchRow("Adanın dışında", "Adayı açmadan, ekranın üstünde ayrı görünür", draft.lyricsOutside) { set(draft.copy(lyricsOutside = it)) }
     }
 
-    if (draft.lyricsInPanel) SectionCard("GENİŞLETİLMİŞ ADA", "Panelin içindeki sözler") {
+    if (draft.lyricsInPanel) SectionCard("Genişletilmiş ada", "Panelin içindeki sözler") {
         SliderRow("Yazı boyutu", draft.lyricsPanelSizeSp, 12f..26f, "${draft.lyricsPanelSizeSp.toInt()} sp") { set(draft.copy(lyricsPanelSizeSp = it)) }
         SliderRow("En fazla satır", draft.lyricsPanelLines.toFloat(), 1f..3f, "${draft.lyricsPanelLines}") { set(draft.copy(lyricsPanelLines = it.roundToInt().coerceIn(1, 3))) }
     }
 
-    if (draft.lyricsCompact) SectionCard("KAPALI ADA", "Tek satır; sığmazsa söylendikçe yana kayar") {
+    if (draft.lyricsCompact) SectionCard("Kapalı ada", "Tek satır; sığmazsa söylendikçe yana kayar") {
         SliderRow("Yazı boyutu", draft.lyricsCompactSizeSp, 8f..18f, "${draft.lyricsCompactSizeSp.toInt()} sp") { set(draft.copy(lyricsCompactSizeSp = it)) }
         SliderRow("Ada genişliği (sözler varken)", draft.lyricsCompactWidthDp, 120f..300f, "${draft.lyricsCompactWidthDp.toInt()} dp") { set(draft.copy(lyricsCompactWidthDp = it)) }
         Text("Not: Kamera deliği adanın tam ortasında olduğu için orta kısımdaki harfler deliğin arkasında kalabilir; genişlik arttıkça okunabilirlik artar.",
-            color = cs.onSurfaceVariant, fontSize = 12.sp)
+            color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
     }
 
-    if (draft.lyricsOutside) SectionCard("ADANIN DIŞI", "Ayrı, dokunulmaz söz katmanı (ada genişleyince gizlenir)") {
+    if (draft.lyricsOutside) SectionCard("Adanın dışı", "Ayrı, dokunulmaz söz katmanı (ada genişleyince gizlenir)") {
         SliderRow("Yazı boyutu", draft.lyricsOutsideSizeSp, 12f..40f, "${draft.lyricsOutsideSizeSp.toInt()} sp") { set(draft.copy(lyricsOutsideSizeSp = it)) }
         SliderRow("En fazla satır", draft.lyricsOutsideLines.toFloat(), 1f..3f, "${draft.lyricsOutsideLines}") { set(draft.copy(lyricsOutsideLines = it.roundToInt().coerceIn(1, 3))) }
         SliderRow("Genişlik", draft.lyricsOutsideWidthDp, 180f..420f, "${draft.lyricsOutsideWidthDp.toInt()} dp") { set(draft.copy(lyricsOutsideWidthDp = it)) }
@@ -279,7 +280,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         SliderRow("Yatay konum", draft.lyricsOutsideXDp, -150f..150f, "${draft.lyricsOutsideXDp.toInt()} dp") { set(draft.copy(lyricsOutsideXDp = it)) }
     }
 
-    SectionCard("RENK", "Üç yerde de ortak") {
+    SectionCard("Renk", "Üç yerde de ortak") {
         SwitchRow("Albüm kapağı rengi", "Söz rengi, çalan şarkının kapağına göre değişir",
             draft.lyricsDynamicColor) { set(draft.copy(lyricsDynamicColor = it)) }
         SectionDivider()
@@ -288,8 +289,9 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         SliderRow("Söylenmemiş kısım", draft.lyricsDimAlpha, 0.1f..0.8f, "%${(draft.lyricsDimAlpha * 100).toInt()}") { set(draft.copy(lyricsDimAlpha = it)) }
     }
 
-    SectionCard("DOLUM VE SENKRON", "Satır şarkıyla birlikte soldan sağa dolar") {
+    SectionCard("Dolum ve senkron", "Satır şarkıyla birlikte soldan sağa dolar") {
         SwitchRow("Söylendikçe dolsun", "Kapatırsan satırın tamamı parlak görünür", draft.lyricsFillEnabled) { set(draft.copy(lyricsFillEnabled = it)) }
+        SectionDivider()
         val off = draft.lyricsOffsetMs
         SliderRow("Senkron kaydırma", off.toFloat(), -2000f..2000f, (if (off > 0) "+$off" else "$off") + " ms") {
             set(draft.copy(lyricsOffsetMs = (it / 50f).roundToInt() * 50))
@@ -297,18 +299,20 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         Text("+ değer sözleri daha erken, − değer daha geç gösterir.", color = cs.onSurfaceVariant, fontSize = 12.sp)
     }
 
-    SectionCard("PARILTI (GLOW)", "Söylenen kısmın etrafında") {
+    SectionCard("Parıltı (Glow)", "Söylenen kısmın etrafında") {
         SwitchRow("Parıltı efekti", null, draft.lyricsGlowEnabled) { set(draft.copy(lyricsGlowEnabled = it)) }
         if (draft.lyricsGlowEnabled) {
             SliderRow("Seviye", draft.lyricsGlowLevel, 0.1f..1f, "%${(draft.lyricsGlowLevel * 100).toInt()}") { set(draft.copy(lyricsGlowLevel = it)) }
         }
     }
 
-    SectionCard("SATIR GEÇİŞ ANİMASYONU", "Bir satırdan diğerine geçerken") {
+    SectionCard("Satır geçiş animasyonu", "Bir satırdan diğerine geçerken") {
         SwitchRow("Geçiş animasyonları", "Kapatırsan satırlar anında değişir", draft.lyricsAnimEnabled) { set(draft.copy(lyricsAnimEnabled = it)) }
         if (draft.lyricsAnimEnabled) {
-            LYRIC_ANIMS.forEachIndexed { i, (name, desc) ->
-                RadioRow(name, desc, draft.lyricsAnimStyle == i) { set(draft.copy(lyricsAnimStyle = i)) }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LYRIC_ANIMS.forEachIndexed { i, (name, desc) ->
+                    RadioRow(name, desc, draft.lyricsAnimStyle == i) { set(draft.copy(lyricsAnimStyle = i)) }
+                }
             }
             if (draft.lyricsAnimStyle != 5) {
                 SliderRow("Süre", draft.lyricsAnimMs.toFloat(), 120f..900f, "${draft.lyricsAnimMs} ms") { set(draft.copy(lyricsAnimMs = it.toInt())) }
@@ -320,6 +324,7 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
 // ---------------------------------------------------------------- Renk seçici (HSV)
 @Composable
 fun ColorPicker(argb: Int, onColor: (Int) -> Unit) {
+    val cs = MaterialTheme.colorScheme
     val hsv0 = remember { FloatArray(3).also { android.graphics.Color.colorToHSV(argb, it) } }
     var h by remember { mutableFloatStateOf(hsv0[0]) }
     var s by remember { mutableFloatStateOf(hsv0[1]) }
@@ -327,22 +332,26 @@ fun ColorPicker(argb: Int, onColor: (Int) -> Unit) {
     fun emit() = onColor(Color.hsv(h, s, v).toArgb())
 
     val presets = remember { listOf(0xFF0A84FF, 0xFF30D158, 0xFFFF453A, 0xFFFF9F0A, 0xFFBF5AF2, 0xFFFFFFFF).map { Color(it) } }
+    val current = Color.hsv(h, s, v)
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             presets.forEach { c ->
+                val picked = c.toArgb() == current.toArgb()
                 Box(
-                    Modifier.size(32.dp).background(c, CircleShape)
-                        .border(if (c.toArgb() == Color.hsv(h, s, v).toArgb()) 2.dp else 1.dp,
-                            if (c.toArgb() == Color.hsv(h, s, v).toArgb()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline, CircleShape)
-                        .clickable {
+                    Modifier.size(34.dp)
+                        .border(if (picked) 2.dp else 0.dp, if (picked) cs.primary else Color.Transparent, CircleShape)
+                        .padding(3.dp)
+                        .clip(CircleShape).background(c)
+                        .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+                        .clickable(role = Role.Button) {
                             val t = FloatArray(3); android.graphics.Color.colorToHSV(c.toArgb(), t)
                             h = t[0]; s = t[1]; v = t[2]; emit()
                         }
                 )
             }
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size(32.dp).background(Color.hsv(h, s, v), RoundedCornerShape(8.dp)).border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)))
+            Box(Modifier.size(34.dp).clip(RoundedCornerShape(10.dp)).background(current).border(1.dp, cs.outline, RoundedCornerShape(10.dp)))
         }
         HueBar(h) { h = it; emit() }
         SliderRow("Doygunluk", s, 0f..1f, "%${(s * 100).toInt()}") { s = it; emit() }
@@ -356,7 +365,7 @@ private fun HueBar(hue: Float, onHue: (Float) -> Unit) {
     var w by remember { mutableIntStateOf(1) }
     val cb by rememberUpdatedState(onHue)
     Box(
-        Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(14.dp))
+        Modifier.fillMaxWidth().height(30.dp).clip(RoundedCornerShape(15.dp))
             .background(Brush.horizontalGradient(colors))
             .onSizeChanged { w = it.width.coerceAtLeast(1) }
             .pointerInput(Unit) { detectTapGestures { cb((it.x / w * 360f).coerceIn(0f, 360f)) } }
@@ -368,8 +377,11 @@ private fun HueBar(hue: Float, onHue: (Float) -> Unit) {
     ) {
         Box(
             Modifier.align(Alignment.CenterStart)
-                .offset { IntOffset((hue / 360f * w - 10.dp.toPx()).toInt(), 0) }
-                .size(20.dp).border(2.dp, Color.White, CircleShape).background(Color.hsv(hue, 1f, 1f), CircleShape)
+                .offset {
+                    val thumb = 24.dp.toPx()
+                    IntOffset((hue / 360f * w - thumb / 2f).toInt().coerceIn(0, (w - thumb.toInt()).coerceAtLeast(0)), 0)
+                }
+                .size(24.dp).border(2.5.dp, Color.White, CircleShape).background(Color.hsv(hue, 1f, 1f), CircleShape)
         )
     }
 }
