@@ -72,6 +72,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var curH = 1
 
     // Konum otomatik düzeltme: pencere içeriği sistem tarafından kaydırılırsa ölçüp telafi ederiz
+    // Şarkı sözleri
+    private val lyrics = MutableStateFlow<LyricsState>(LyricsState.Idle)
+    private val mediaState = MutableStateFlow<IslandContent.Media?>(null)
+    private var lyricsKey: String? = null
+    private var lyricsJob: Job? = null
+    private var outsideView: ComposeView? = null
+    private var outsideLp: WindowManager.LayoutParams? = null
+
     private var wantX = 0
     private var wantY = 0                 // adanın pencere üstünün olması gereken ekran Y'si
     private var calibDy = 0               // ölçülen kayma (px)
@@ -79,7 +87,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val calibrateRunnable = Runnable { calibrate() }
     private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(60)?.start() }
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val s: IslandSettings)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings)
 
     override fun onCreate() {
         savedStateController.performAttach()
@@ -95,9 +103,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { reattach() }
         scope.launch { IslandBus.events.collect(::handle) }
+        // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
+        scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s) } }
+        scope.launch { lyrics.collect { update { it } } }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, s) }
+            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -126,19 +137,52 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
+    /** ui'yi günceller ve "kapalı adada söz gösterilsin mi" bayrağını yeniden hesaplar. */
+    private fun update(f: (IslandUiState) -> IslandUiState) {
+        val n = f(ui.value)
+        val s = settings.value
+        val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
+            lastMedia?.playing == true && n.content is IslandContent.Media
+        ui.value = n.copy(compactLyrics = want)
+    }
+
     private fun onMedia(m: IslandContent.Media?) {
         if (m == lastMedia) return
         lastMedia = m
+        mediaState.value = m
+        ensureLyrics()
         val cur = ui.value
         when {
-            cur.content is IslandContent.Notif -> Unit
+            cur.content is IslandContent.Notif -> update { it }
             m == null || (!m.playing && !cur.expanded) -> { collapseJob?.cancel(); rest() }
-            else -> ui.value = cur.copy(content = m)
+            else -> update { it.copy(content = m) }
+        }
+    }
+
+    /** Parça (başlık/sanatçı/süre) değişince sözleri arar; özellik kapalıysa hiçbir istek atılmaz. */
+    private fun ensureLyrics() {
+        val s = settings.value
+        val m = lastMedia
+        val wanted = s.lyricsEnabled && (s.lyricsInPanel || s.lyricsCompact || s.lyricsOutside)
+        if (!wanted || m == null || m.title.isBlank()) {
+            lyricsJob?.cancel(); lyricsKey = null
+            if (lyrics.value != LyricsState.Idle) lyrics.value = LyricsState.Idle
+            return
+        }
+        val key = "${m.title}|${m.artist}|${m.durationMs / 1000}"
+        if (key == lyricsKey) return
+        lyricsKey = key
+        lyricsJob?.cancel()
+        LyricsRepository.cached(key)?.let { lyrics.value = it; return }
+        lyrics.value = LyricsState.Loading
+        lyricsJob = scope.launch {
+            val r = LyricsRepository.fetch(key, m.title, m.artist, m.durationMs)
+            if (lyricsKey == key) lyrics.value = r
         }
     }
 
     private fun showTemporarily(content: IslandContent, holdMs: Long) {
-        ui.value = IslandUiState(content, expanded = true)
+        update { IslandUiState(content, expanded = true) }
         scheduleCollapse(holdMs)
     }
 
@@ -148,14 +192,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private suspend fun collapseAndRest() {
-        ui.value = ui.value.copy(expanded = false)
+        update { it.copy(expanded = false) }
         delay(settings.value.settleMs())
         rest()
     }
 
     private fun rest() {
         val m = lastMedia
-        ui.value = if (m != null && m.playing) IslandUiState(m, false) else IslandUiState()
+        update { if (m != null && m.playing) IslandUiState(m, false) else IslandUiState() }
     }
 
     private fun onPillTap() {
@@ -165,7 +209,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (cur.expanded) {
                     collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
                 } else {
-                    ui.value = cur.copy(expanded = true)
+                    update { it.copy(expanded = true) }
                     scheduleCollapse(8_000)
                 }
             is IslandContent.Notif -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
@@ -175,6 +219,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun onCommand(c: MediaCommand) {
         IslandBus.send(c)
+        if (ui.value.expanded) scheduleCollapse(8_000)
+    }
+
+    /** Panelin sağ alt köşesindeki yayın simgesi: sistemin ses / medya çıkışı paneli. */
+    private fun openOutputPanel() {
+        runCatching {
+            startActivity(Intent(android.provider.Settings.Panel.ACTION_VOLUME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         if (ui.value.expanded) scheduleCollapse(8_000)
     }
 
@@ -222,7 +274,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun reattach() {
         detachOverlay()
         attachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, settings.value)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
     }
 
     private fun detachOverlay() {
@@ -244,7 +296,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent {
-                IslandRoot(state = ui, settingsFlow = settings, onTap = ::onPillTap, onCommand = ::onCommand)
+                IslandRoot(
+                    state = ui, settingsFlow = settings, lyricsFlow = lyrics,
+                    onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
+                )
             }
         }
         composeView = view
@@ -368,10 +423,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
-        val cw = dp(s.compactWidthDp); val ch = dp(s.compactHeightDp)
+        val cw = dp(compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
         val ew = dp(s.expandedWidthDp)
-        val eh = dp(s.expandedHeightDp + if (music) MUSIC_EXTRA_DP else 0f)
+        val eh = dp(s.expandedHeightDp + if (music) s.musicExtraDp() else 0f)
 
         val screenW = wm.currentWindowMetrics.bounds.width()
         val baseX = cutCenterXOffsetPx + dp(s.offsetXDp)
@@ -416,8 +471,67 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Temizlik
+    // ---------------------------------------------------------------- Adanın dışındaki şarkı sözleri
+    /** Ayrı, dokunmatik olmayan bir overlay penceresi: sözler adayı açmadan da görünür. */
+    private fun syncOutside(s: IslandSettings) {
+        if (!(s.lyricsEnabled && s.lyricsOutside)) { detachOutside(); return }
+        val pad = dp(24f)
+        val fs = resources.configuration.fontScale
+        val w = dp(s.lyricsOutsideWidthDp) + 2 * pad
+        val h = dp(s.lyricsOutsideSizeSp * fs * 1.3f * s.lyricsOutsideLines) + 2 * pad
+        val x = dp(s.lyricsOutsideXDp)
+        val y = dp(s.lyricsOutsideYDp) - pad
+
+        val existing = outsideView
+        val lp = outsideLp
+        if (existing != null && lp != null) {
+            if (lp.width != w || lp.height != h || lp.x != x || lp.y != y) {
+                lp.width = w; lp.height = h; lp.x = x; lp.y = y
+                runCatching { wm.updateViewLayout(existing, lp) }
+            }
+            return
+        }
+
+        val view = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@IslandOverlayService)
+            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
+            setContent { OutsideLyricsRoot(ui, settings, lyrics, mediaState) }
+        }
+        val params = WindowManager.LayoutParams(
+            w, h,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            this.x = x; this.y = y
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        if (runCatching { wm.addView(view, params) }.isSuccess) {
+            outsideView = view; outsideLp = params
+        } else {
+            view.disposeComposition()
+        }
+    }
+
+    private fun detachOutside() {
+        val v = outsideView ?: return
+        runCatching { wm.removeView(v) }
+        v.disposeComposition()
+        v.setViewTreeLifecycleOwner(null)
+        v.setViewTreeSavedStateRegistryOwner(null)
+        outsideView = null; outsideLp = null
+    }
+
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
+        lyricsJob?.cancel()
+        detachOutside()
         collapseJob?.cancel()
         scope.cancel()
         detachOverlay()

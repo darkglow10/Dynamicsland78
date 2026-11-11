@@ -5,7 +5,9 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -49,11 +51,14 @@ const val MUSIC_EXTRA_DP = 100f
 @Immutable
 data class Geo(val cw: Dp, val ch: Dp, val ew: Dp, val eh: Dp)
 
-fun islandGeo(cfg: IslandSettings, music: Boolean) = Geo(
-    cw = cfg.compactWidthDp.dp,
+fun compactWidthFor(cfg: IslandSettings, compactLyrics: Boolean): Float =
+    if (compactLyrics) maxOf(cfg.compactWidthDp, cfg.lyricsCompactWidthDp) else cfg.compactWidthDp
+
+fun islandGeo(cfg: IslandSettings, music: Boolean, compactLyrics: Boolean = false) = Geo(
+    cw = compactWidthFor(cfg, compactLyrics && music).dp,
     ch = cfg.compactHeightDp.dp,
     ew = cfg.expandedWidthDp.dp,
-    eh = (cfg.expandedHeightDp + if (music) MUSIC_EXTRA_DP else 0f).dp,
+    eh = (cfg.expandedHeightDp + if (music) cfg.musicExtraDp() else 0f).dp,
 )
 
 // ---------------------------------------------------------------- Animasyon (5 stil + kapalı)
@@ -89,26 +94,38 @@ fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean): IslandProgre
 fun IslandRoot(
     state: StateFlow<IslandUiState>,
     settingsFlow: StateFlow<IslandSettings>,
+    lyricsFlow: StateFlow<LyricsState>,
     onTap: () -> Unit,
     onCommand: (MediaCommand) -> Unit,
+    onOutput: () -> Unit,
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
+    val lyrics by lyricsFlow.collectAsState()
     val content = s.content
+    val media = content as? IslandContent.Media
     val progress = rememberIslandProgress(cfg, s.expanded)
+    val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
+    val frame = rememberLyricFrame(
+        media, lyrics, cfg.lyricsOffsetMs.toLong(),
+        active = lyricsOn && lyrics is LyricsState.Ready, fine = cfg.lyricsFillEnabled,
+    )
 
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
     Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
-        if (content !is IslandContent.Idle || cfg.showIdle) {
+        if (content !is IslandContent.Idle) {
             val music = content is IslandContent.Media
-            val geo = remember(cfg, music) { islandGeo(cfg, music) }
-            IslandPill(content, progress, geo, cfg, onTap, onCommand)
+            // Sözler görününce kapalı ada yumuşakça genişler / sözler bitince daralır
+            val cwSpec: AnimationSpec<Dp> = if (cfg.animEnabled) tween<Dp>(380, easing = FastOutSlowInEasing) else snap<Dp>()
+            val cw by animateDpAsState(compactWidthFor(cfg, s.compactLyrics && music).dp, cwSpec, label = "cw")
+            val geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput)
         }
     }
 }
 
 // ---------------------------------------------------------------- Renk / yüzey / parıltı
-private val PillShape = RoundedCornerShape(28.dp)
+private val PillShape = RoundedCornerShape(36.dp)
 private val SheenBrush = Brush.verticalGradient(
     listOf(Color.White.copy(0.22f), Color.White.copy(0.05f), Color.Transparent, Color.White.copy(0.08f))
 )
@@ -143,7 +160,7 @@ private fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensity
     if (!enabled) this else this.drawBehind {
         val rings = 6
         val step = GLOW_PAD_DP.dp.toPx() / rings
-        val base = min(28.dp.toPx(), size.height / 2f)
+        val base = min(36.dp.toPx(), size.height / 2f)
         val c = color.value
         for (i in 1..rings) {
             val inflate = (i - 0.5f) * step
@@ -165,8 +182,12 @@ fun IslandPill(
     progress: IslandProgress,
     geo: Geo,
     cfg: IslandSettings,
+    lyrics: LyricsState,
+    frame: LyricFrame,
+    compactLyrics: Boolean,
     onTap: () -> Unit,
     onCommand: (MediaCommand) -> Unit,
+    onOutput: () -> Unit,
 ) {
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
     val media = content as? IslandContent.Media
@@ -200,7 +221,7 @@ fun IslandPill(
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent)
-                    is IslandContent.Media -> MusicPanel(content, highlight, onCommand)
+                    is IslandContent.Media -> MusicPanel(content, highlight, cfg, lyrics, frame, onCommand, onOutput)
                     IslandContent.Idle -> Unit
                 }
             }
@@ -214,6 +235,16 @@ fun IslandPill(
                     bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
                     modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
                         .size(artSize).clip(RoundedCornerShape(6.dp)).then(fade),
+                )
+            }
+            if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
+                // Albüm kapağı ile equalizer arasındaki orta boşluk
+                val startPad = if (content.art != null) 8.dp + artSize + 8.dp else 14.dp
+                val endPad = 10.dp + 23.dp + 8.dp
+                CompactLyrics(
+                    cfg, lyrics, frame,
+                    Modifier.align(Alignment.TopCenter).padding(start = startPad, end = endPad)
+                        .fillMaxWidth().height(geo.ch).then(fade),
                 )
             }
             Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
