@@ -218,6 +218,7 @@ private fun PreviewCard(cfg: IslandSettings, mode: Int, onMode: (Int) -> Unit, e
                     cfg, SAMPLE_STATE, frame,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 26.dp)
                         .width(cfg.lyricsOutsideWidthDp.dp.coerceAtMost(320.dp)),
+                    artColor = SAMPLE_COLOR,
                 )
             }
             Text("Önizlemeye dokunarak aç / kapat", color = Color.White.copy(alpha = 0.55f), fontSize = 11.sp,
@@ -272,6 +273,10 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
     }
 
     SectionCard("RENK", "Üç yerde de ortak") {
+        SwitchRow("Albüm kapağı rengi", "Söz rengi, çalan şarkının kapağına göre değişir",
+            draft.lyricsDynamicColor) { set(draft.copy(lyricsDynamicColor = it)) }
+        SectionDivider()
+        SubHeader(if (draft.lyricsDynamicColor) "Kapak yoksa kullanılacak renk" else "Söz rengi")
         key(version) { ColorPicker(draft.lyricsColorArgb) { set(draft.copy(lyricsColorArgb = it)) } }
         SliderRow("Söylenmemiş kısım", draft.lyricsDimAlpha, 0.1f..0.8f, "%${(draft.lyricsDimAlpha * 100).toInt()}") { set(draft.copy(lyricsDimAlpha = it)) }
     }
