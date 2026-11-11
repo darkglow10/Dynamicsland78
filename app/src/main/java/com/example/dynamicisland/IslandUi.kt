@@ -251,7 +251,7 @@ fun IslandPill(
             }
             Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
                 if (content.playing) Equalizer(highlight)
-                else Box(Modifier.size(6.dp).background(Color.Gray, CircleShape))
+                else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
             }
         }
     }
@@ -259,26 +259,36 @@ fun IslandPill(
 
 @Composable
 private fun NotifContent(c: IslandContent.Notif, accent: Color) {
+    val iconShape = RoundedCornerShape(13.dp)
     Row(
         Modifier.fillMaxSize().padding(horizontal = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         val icon = c.icon
         if (icon != null) {
             Image(
                 bitmap = icon, contentDescription = null,
-                modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(12.dp)),
+                modifier = Modifier.size(46.dp).clip(iconShape)
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), iconShape),
             )
         } else {
-            Box(Modifier.size(42.dp).background(accent, RoundedCornerShape(12.dp)))
+            Box(Modifier.size(46.dp).background(accent, iconShape), contentAlignment = Alignment.Center) {
+                Text(
+                    c.title.trim().take(1).uppercase().ifEmpty { "•" },
+                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                )
+            }
         }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(c.text, color = Color.White.copy(alpha = 0.72f), fontSize = 13.sp, lineHeight = 17.sp,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (c.title.isNotBlank()) {
+                Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (c.text.isNotBlank()) {
+                Text(c.text, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp, lineHeight = 18.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
