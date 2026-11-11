@@ -113,7 +113,8 @@ fun IslandRoot(
 
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
     Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
-        if (content !is IslandContent.Idle) {
+        // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.
+        if (content !is IslandContent.Idle || cfg.showIdle) {
             val music = content is IslandContent.Media
             // Sözler görününce kapalı ada yumuşakça genişler / sözler bitince daralır
             val cwSpec: AnimationSpec<Dp> = if (cfg.animEnabled) tween<Dp>(380, easing = FastOutSlowInEasing) else snap<Dp>()
@@ -245,6 +246,7 @@ fun IslandPill(
                     cfg, lyrics, frame,
                     Modifier.align(Alignment.TopCenter).padding(start = startPad, end = endPad)
                         .fillMaxWidth().height(geo.ch).then(fade),
+                    artColor = content.artColor,
                 )
             }
             Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
