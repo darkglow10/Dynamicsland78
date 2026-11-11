@@ -109,7 +109,7 @@ fun MusicPanel(
             Equalizer(accent, height = 28.dp, barWidth = 4.dp, animate = m.playing)
         }
 
-        if (cfg.lyricsEnabled && cfg.lyricsInPanel) PanelLyrics(cfg, lyrics, frame)
+        if (cfg.lyricsEnabled && cfg.lyricsInPanel) PanelLyrics(cfg, lyrics, frame, artColor = m.artColor)
 
         MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
 
