@@ -106,7 +106,7 @@ private fun SetupScreen() {
                     if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 SectionDivider()
-                PermRow("Erişilebilirlik (isteğe bağlı)", "Bildirim erişimi çalışmazsa yedek", a11y, false) {
+                PermRow("Erişilebilirlik (dokunma için gerekli)", "Adanın durum çubuğunda dokunulabilmesi için", a11y, false) {
                     ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
             }
