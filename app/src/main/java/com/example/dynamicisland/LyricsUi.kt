@@ -338,6 +338,7 @@ fun LyricLineText(
         val targetColor = if (cfg.lyricsDynamicColor) lyricColorFromArt(artColor, baseColor) else baseColor
         val color by animateColorAsState(targetColor, tween(450), label = "lyricColor")
         val dim = color.copy(alpha = cfg.lyricsDimAlpha)
+        val rb = rememberRainbowStyle(cfg)   // gökkuşağı modu: açıksa söz rengi yerine gökkuşağı
 
         // Parıltı yarıçapı yazı boyutuyla orantılı ve küçük tutulur: harflerin hemen çevresinde kalır,
         // yan satırlara / öğelere taşmaz. Seviye 1.0'da bile yazı boyutunun ~üçte biri.
@@ -358,6 +359,9 @@ fun LyricLineText(
                 else -> 0f
             }
             val f = if (cfg.lyricsFillEnabled) progress else 1f
+            val rbBrush: Brush? = rb?.let { rainbowBrush(it.phase.value, maxOf(size.width, textW.toFloat(), 160.dp.toPx()), it.alpha) }
+            val rbColor: Color? = rb?.let { rainbowColorAt(it.phase.value, it.alpha) }
+            val litShadow: Shadow? = if (rbColor != null && glowPx > 0f) Shadow(rbColor.copy(alpha = rbColor.alpha * 0.8f), Offset.Zero, glowPx) else shadow
             val overflow = (textW - size.width).coerceAtLeast(0f)
             val dx = if (!scroll) 0f else if (overflow > 0f) -overflow * progress else (size.width - textW) / 2f
 
@@ -378,6 +382,8 @@ fun LyricLineText(
                         val a = wordAnims.getOrNull(i)?.value ?: 1f
                         if (a <= 0.001f) continue
                         val wl = wordLayouts.getOrNull(i) ?: continue
+                        val wcol = if (rb != null) rainbowColorAt(rb.phase.value + i * 0.09f, rb.alpha) else color   // gökkuşağı: kelime başına ton farkı
+                        val wdim = if (rb != null) wcol.copy(alpha = wcol.alpha * cfg.lyricsDimAlpha) else dim
                         val endC = minOf(w.end, visEnd)
                         val bl = layout.getBoundingBox(w.start)
                         val br = layout.getBoundingBox((endC - 1).coerceAtLeast(w.start))
@@ -394,19 +400,19 @@ fun LyricLineText(
                         // küçülen kelimede sabit yarıçaplı parıltı kenarlardan taşıp ince çizgiler oluşturuyordu.
                         val gA = ((a - 0.6f) / 0.4f).coerceIn(0f, 1f)
                         val wShadow: Shadow? = when {
-                            glowPx > 0f -> if (gA > 0f) Shadow(color.copy(alpha = color.alpha * 0.8f * gA), Offset.Zero, glowPx) else null
+                            glowPx > 0f -> if (gA > 0f) Shadow(wcol.copy(alpha = wcol.alpha * 0.8f * gA), Offset.Zero, glowPx) else null
                             outside -> shadow
                             else -> null
                         }
                         // Her kelime KENDİ metniyle çizilir: tüm satırı kırpıp çizmek, komşu kelimelerin
                         // harf kenarlarını da (kırpma payı içinde kalan) ince çizgiler olarak gösteriyordu.
                         withTransform({ translate(tx, ty); scale(sc, sc, pivot) }) {
-                            if (wf < 0.999f) drawText(wl, color = dim.copy(alpha = dim.alpha * alpha), topLeft = topLeft, shadow = if (outside && glowPx <= 0f) shadow else null)
+                            if (wf < 0.999f) drawText(wl, color = wdim.copy(alpha = wdim.alpha * alpha), topLeft = topLeft, shadow = if (outside && glowPx <= 0f) shadow else null)
                             if (wf >= 0.999f) {
-                                drawText(wl, color = color.copy(alpha = color.alpha * alpha), topLeft = topLeft, shadow = wShadow)
+                                drawText(wl, color = wcol.copy(alpha = wcol.alpha * alpha), topLeft = topLeft, shadow = wShadow)
                             } else if (wf > 0f) {
                                 clipRect(rect.left - gb, rect.top - gb, rect.left + rect.width * wf, rect.bottom + gb) {
-                                    drawText(wl, color = color.copy(alpha = color.alpha * alpha), topLeft = topLeft, shadow = wShadow)
+                                    drawText(wl, color = wcol.copy(alpha = wcol.alpha * alpha), topLeft = topLeft, shadow = wShadow)
                                 }
                             }
                         }
@@ -416,9 +422,13 @@ fun LyricLineText(
             }
             clipRect(left = clipL, top = -bleed, right = clipR, bottom = size.height + bleed) {
                 translate(left = dx) {
-                    if (f < 0.999f) drawText(layout, color = dim, shadow = if (outside && glowPx <= 0f) shadow else null)
+                    if (f < 0.999f) {
+                        if (rbBrush != null) drawText(layout, brush = rbBrush, alpha = cfg.lyricsDimAlpha, shadow = if (outside && glowPx <= 0f) shadow else null)
+                        else drawText(layout, color = dim, shadow = if (outside && glowPx <= 0f) shadow else null)
+                    }
                     if (f >= 0.999f) {
-                        drawText(layout, color = color, shadow = shadow)
+                        if (rbBrush != null) drawText(layout, brush = rbBrush, shadow = litShadow)
+                        else drawText(layout, color = color, shadow = shadow)
                     } else if (f > 0f) {
                         val n = layout.lineCount
                         var total = 0f
@@ -435,7 +445,10 @@ fun LyricLineText(
                                 top = layout.getLineTop(i) - bleed,
                                 right = if (take >= w) r + bleed + 2f else l + take,
                                 bottom = layout.getLineBottom(i) + bleed,
-                            ) { drawText(layout, color = color, shadow = shadow) }
+                            ) {
+                                if (rbBrush != null) drawText(layout, brush = rbBrush, shadow = litShadow)
+                                else drawText(layout, color = color, shadow = shadow)
+                            }
                             remaining -= w
                         }
                     }
