@@ -93,14 +93,21 @@ private fun SetupScreen() {
     }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { postNotif = it }
 
-    val canStart = overlay && postNotif
+    // Dört izin de verilmeden "hazır" denmez ve Başlat açılmaz
+    val missing = buildList {
+        if (!overlay) add("Üstte gösterme")
+        if (!listener) add("Bildirim erişimi")
+        if (!postNotif) add("Bildirim gösterme")
+        if (!a11y) add("Erişilebilirlik")
+    }
+    val canStart = missing.isEmpty()
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            StatusBanner(canStart, listener)
+            StatusBanner(missing)
 
             SectionCard("İzinler", "Her izin Ayarlar'da tek dokunuşla verilir") {
                 PermRow("Üstte gösterme", "Adayı diğer uygulamaların üzerinde çizer", overlay, true) {
@@ -115,7 +122,7 @@ private fun SetupScreen() {
                     if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 SectionDivider()
-                PermRow("Erişilebilirlik (dokunma için gerekli)", "Adanın durum çubuğunda dokunulabilmesi için", a11y, false) {
+                PermRow("Erişilebilirlik", "Adaya dokunabilmek için gerekli", a11y, true) {
                     ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
             }
@@ -136,7 +143,10 @@ private fun SetupScreen() {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
             ActionBtn(
                 "Başlat", primary = true, enabled = canStart, modifier = Modifier.weight(1f),
-                onClick = { ContextCompat.startForegroundService(ctx, Intent(ctx, IslandOverlayService::class.java)) },
+                onClick = {
+                    ContextCompat.startForegroundService(ctx, Intent(ctx, IslandOverlayService::class.java))
+                    IslandNotificationListener.republish(ctx)   // servis zaten açıksa da mevcut müziği tekrar yayınla
+                },
             )
             ActionBtn(
                 "Durdur", primary = false, enabled = true, modifier = Modifier.weight(0.6f),
@@ -161,15 +171,13 @@ private fun ActionBtn(text: String, primary: Boolean, enabled: Boolean, modifier
 }
 
 @Composable
-private fun StatusBanner(canStart: Boolean, listener: Boolean) {
+private fun StatusBanner(missing: List<String>) {
     val cs = MaterialTheme.colorScheme
-    val ready = canStart && listener
-    val (title, desc) = when {
-        ready -> "Her şey hazır" to "Başlat'a dokunarak adayı çalıştırabilirsin."
-        canStart -> "Neredeyse hazır" to "Bildirim erişimi olmadan bildirim ve müzik gösterilmez."
-        else -> "Eksik izinler var" to "Aşağıdaki zorunlu izinleri ver, sonra Başlat'a dokun."
-    }
-    val dot = when { ready -> Color(0xFF4CD964); canStart -> Color(0xFFFFB340); else -> Color(0xFFFF6B5E) }
+    val ready = missing.isEmpty()
+    val title = if (ready) "Her şey hazır" else "Eksik izinler var"
+    val desc = if (ready) "Başlat'a dokunarak adayı çalıştırabilirsin."
+        else "Başlat'ı açmak için şunları ver: " + missing.joinToString(", ") + "."
+    val dot = when { ready -> Color(0xFF4CD964); missing.size == 1 -> Color(0xFFFFB340); else -> Color(0xFFFF6B5E) }
     val shape = RoundedCornerShape(22.dp)
     Row(
         Modifier.fillMaxWidth().clip(shape)
