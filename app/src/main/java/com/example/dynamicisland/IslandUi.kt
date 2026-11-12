@@ -229,29 +229,33 @@ fun IslandPill(
         }
 
         if (content is IslandContent.Media && compactVisible) {
-            val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
-            val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
-            content.art?.let { art ->
-                Image(
-                    bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
-                    modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
-                        .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
-                )
-            }
-            if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
-                // Albüm kapağı ile equalizer arasındaki orta boşluk
-                val startPad = if (content.art != null) 8.dp + artSize + 8.dp else 14.dp
-                val endPad = 10.dp + 23.dp + 8.dp
-                CompactLyrics(
-                    cfg, lyrics, frame,
-                    Modifier.align(Alignment.TopCenter).padding(start = startPad, end = endPad)
-                        .fillMaxWidth().height(geo.ch).then(fade),
-                    artColor = content.artColor,
-                )
-            }
-            Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
-                if (content.playing) Equalizer(highlight)
-                else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
+            // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
+                val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
+                content.art?.let { art ->
+                    Image(
+                        bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
+                        modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
+                            .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
+                    )
+                }
+                if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
+                    // Albüm kapağı ile equalizer arasındaki orta boşluk
+                    val startPad = if (content.art != null) 8.dp + artSize + 8.dp else 14.dp
+                    val endPad = 10.dp + 23.dp + 8.dp
+                    CompactLyrics(
+                        cfg, lyrics, frame,
+                        Modifier.align(Alignment.TopCenter).padding(start = startPad, end = endPad)
+                            .fillMaxWidth().height(geo.ch).then(fade),
+                        artColor = content.artColor,
+                    )
+                }
+                Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
+                    if (content.playing) Equalizer(highlight)
+                    else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
+                }
+
             }
         }
     }
