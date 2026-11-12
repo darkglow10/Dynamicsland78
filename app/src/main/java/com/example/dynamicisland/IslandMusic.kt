@@ -3,6 +3,7 @@ package com.example.dynamicisland
 import android.content.Context
 import android.os.SystemClock
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -17,6 +18,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -48,9 +51,32 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import java.util.Locale
+
+// ---------------------------------------------------------------- Kayan başlık
+/** Sığmayan şarkı adı: bir süre bekler, sonuna kadar yana kayar, geri döner ve tekrarlar. Sığıyorsa sabit durur. */
+@Composable
+private fun MarqueeText(text: String, modifier: Modifier, color: Color, fontSize: TextUnit, fontWeight: FontWeight) {
+    val scroll = rememberScrollState()
+    val max = scroll.maxValue
+    LaunchedEffect(text, max) {
+        scroll.scrollTo(0)
+        if (max <= 0) return@LaunchedEffect
+        while (true) {
+            delay(1500)
+            scroll.animateScrollTo(max, tween((max * 22).coerceIn(800, 12000), easing = LinearEasing))
+            delay(1200)
+            scroll.animateScrollTo(0, tween(600, easing = FastOutSlowInEasing))
+        }
+    }
+    Text(
+        text, color = color, fontSize = fontSize, fontWeight = fontWeight, maxLines = 1, softWrap = false,
+        modifier = modifier.horizontalScroll(scroll, enabled = false),
+    )
+}
 
 // ---------------------------------------------------------------- Equalizer (sağ kenar)
 @Composable
@@ -107,10 +133,18 @@ fun MusicPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             AlbumArt(m.art, 60.dp)                                   // sol köşe
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(m.title.ifBlank { "Bilinmeyen parça" }, color = Color.White, fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
+            Box(Modifier.weight(1f).height(60.dp)) {
+                MarqueeText(
+                    m.title.ifBlank { "Bilinmeyen parça" },
+                    Modifier.align(Alignment.CenterStart).fillMaxWidth(),
+                    color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().offset(y = 3.dp),
+                )
             }
             Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing)
         }
