@@ -386,6 +386,26 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         dv.requestApplyInsets()
     }
 
+    /**
+     * Pencere küçülürken sol kenarı da değiştiği için sistem pencereyi eski konumundan yeni konumuna
+     * KAYDIRARAK taşıyabiliyor (ada durum çubuğunun solundan ortaya kayıyormuş gibi görünür).
+     * "Taşıma animasyonu" kapatılırsa pencere yeni yerine doğrudan geçer. Üst düzey API yoksa
+     * (eski Android) gizli bayrak denenir; hiçbiri çalışmazsa sessizce geçilir.
+     */
+    private fun disableMoveAnimation(lp: WindowManager.LayoutParams) {
+        val viaApi = runCatching {
+            WindowManager.LayoutParams::class.java
+                .getMethod("setCanPlayMoveAnimation", Boolean::class.javaPrimitiveType)
+                .invoke(lp, false)
+        }.isSuccess
+        if (viaApi) return
+        runCatching {
+            val f = WindowManager.LayoutParams::class.java.getDeclaredField("privateFlags")
+            f.isAccessible = true
+            f.setInt(lp, f.getInt(lp) or 0x00000040)   // PRIVATE_FLAG_NO_MOVE_ANIMATION
+        }
+    }
+
     private fun setGeometry(w: Int, h: Int, x: Int, y: Int, recalibrate: Boolean = true) {
         val win = dialog?.window ?: return
         val big = w > 1 && h > 1
@@ -397,6 +417,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
         val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
         lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
+        disableMoveAnimation(lp)
         // Pencere KÜÇÜLÜRKEN ve yatay konumu da DEĞİŞİRKEN sistem eski kareyi bir an yanlış yerde
         // gösterebiliyor (yana kayma): yalnızca o durumda içeriği kısa süre gizleyip geri getiriyoruz.
         // Konum aynıysa (ada pencerenin ortasında kalıyorsa) gizlemeye gerek yok; gizlemek
