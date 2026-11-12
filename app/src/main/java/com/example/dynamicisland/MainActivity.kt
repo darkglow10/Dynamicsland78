@@ -1,7 +1,13 @@
 package com.example.dynamicisland
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.PowerManager
+import android.widget.Toast
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -36,6 +42,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +74,41 @@ private fun Context.hasAccessibility(): Boolean {
     val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
     return enabled.contains("$packageName/${IslandAccessibilityService::class.java.name}")
 }
+/** Ayarlarda açık VE servis gerçekten bağlı mı? Servis çökerse ayarlarda açık görünür ama bağlı olmaz. */
+private fun a11yConnected() = IslandAccessibilityService.instance != null
+private fun Context.canHealA11y() =
+    checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
+private fun Context.ignoringBattery() =
+    runCatching { getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) }.getOrDefault(true)
+
+private fun copyText(ctx: Context, label: String, text: String) {
+    runCatching {
+        ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(label, text))
+        Toast.makeText(ctx, "Kopyalandı", Toast.LENGTH_SHORT).show()
+    }
+}
+
+private const val ADB_GRANT = "adb shell pm grant com.example.dynamicisland android.permission.WRITE_SECURE_SETTINGS"
+
+/**
+ * Çökmüş erişilebilirlik servisini kapatıp açar (sistemin "hatalı çalışıyor" işaretini temizler).
+ * Yalnızca WRITE_SECURE_SETTINGS izni adb ile bir kez verildiyse çalışır.
+ */
+private suspend fun healAccessibility(ctx: Context): Boolean {
+    if (!ctx.canHealA11y()) return false
+    val me = ComponentName(ctx, IslandAccessibilityService::class.java)
+    val cr = ctx.contentResolver
+    return runCatching {
+        val cur = Settings.Secure.getString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+        val others = cur.split(':').filter { it.isNotBlank() && ComponentName.unflattenFromString(it) != me }
+        Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, others.joinToString(":"))
+        delay(800)
+        Settings.Secure.putString(cr, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, (others + me.flattenToString()).joinToString(":"))
+        Settings.Secure.putInt(cr, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+        true
+    }.getOrDefault(false)
+}
+
 private fun Context.hasPostNotif() =
     Build.VERSION.SDK_INT < 33 ||
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == 0
@@ -101,6 +143,14 @@ private fun SetupScreen() {
     var listener by remember { mutableStateOf(ctx.hasListener()) }
     var a11y by remember { mutableStateOf(ctx.hasAccessibility()) }
     var postNotif by remember { mutableStateOf(ctx.hasPostNotif()) }
+    val scope = rememberCoroutineScope()
+    var connected by remember { mutableStateOf(a11yConnected()) }
+    var battery by remember { mutableStateOf(ctx.ignoringBattery()) }
+    var exits by remember { mutableStateOf(CrashLog.exitReasons(ctx)) }
+    var crash by remember { mutableStateOf(CrashLog.lastCrash(ctx)) }
+    val broken = a11y && !connected          // ayarlarda açık ama servis çalışmıyor
+
+    LaunchedEffect(Unit) { while (true) { connected = a11yConnected(); delay(1000) } }
 
     // Ayarlar sayfasına gönderdiğimiz izin: verilir verilmez uygulamayı öne getiririz
     var waiting by remember { mutableStateOf<String?>(null) }
@@ -108,6 +158,8 @@ private fun SetupScreen() {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         overlay = ctx.hasOverlay(); listener = ctx.hasListener()
         a11y = ctx.hasAccessibility(); postNotif = ctx.hasPostNotif()
+        connected = a11yConnected(); battery = ctx.ignoringBattery()
+        exits = CrashLog.exitReasons(ctx); crash = CrashLog.lastCrash(ctx)
         waiting = null                       // kullanıcı zaten geri döndü
     }
 
@@ -146,6 +198,25 @@ private fun SetupScreen() {
         ) {
             StatusBanner(missing)
 
+            if (broken) {
+                SectionCard("Erişilebilirlik servisi çalışmıyor", "Ayarlarda açık görünüyor ama sistem servisi durdurmuş") {
+                    Text(
+                        "Uygulama süreci kapandığında Android servisi \"hatalı\" diye işaretler ve kendiliğinden geri açmaz. " +
+                            "Sözlerin adadan çıkması ve adaya dokunma bu servise bağlı.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 19.sp,
+                    )
+                    IslandActionButton(if (ctx.canHealA11y()) "Otomatik onar" else "Erişilebilirlik ayarını aç", {
+                        scope.launch {
+                            if (healAccessibility(ctx)) { delay(1200); connected = a11yConnected() }
+                            else {
+                                Toast.makeText(ctx, "Dynamic Island'ı kapatıp tekrar aç", Toast.LENGTH_LONG).show()
+                                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            }
+                        }
+                    })
+                }
+            }
+
             SectionCard("İzinler", "Her izin Ayarlar'da tek dokunuşla verilir") {
                 PermRow("Üstte gösterme", "Adayı diğer uygulamaların üzerinde çizer", overlay, true) {
                     waiting = "overlay"
@@ -161,9 +232,30 @@ private fun SetupScreen() {
                     if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
                 SectionDivider()
-                PermRow("Erişilebilirlik", "Adaya dokunabilmek için gerekli", a11y, true) {
-                    waiting = "a11y"
-                    ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                PermRow(
+                    "Erişilebilirlik",
+                    if (broken) "Açık görünüyor ama çalışmıyor — Onar'a dokun" else "Adaya dokunabilmek ve sözlerin adadan çıkması için gerekli",
+                    a11y && connected, true, action = if (broken) "Onar" else "Aç",
+                ) {
+                    if (broken) {
+                        scope.launch {
+                            if (healAccessibility(ctx)) { delay(1200); connected = a11yConnected() }
+                            else {
+                                Toast.makeText(ctx, "Dynamic Island'ı kapatıp tekrar aç", Toast.LENGTH_LONG).show()
+                                waiting = "a11y"
+                                ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            }
+                        }
+                    } else {
+                        waiting = "a11y"
+                        ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }
+                }
+                SectionDivider()
+                PermRow("Pil kısıtlaması yok", "Önerilir: sistemin uygulamayı arka planda kapatmasını azaltır", battery, false) {
+                    runCatching {
+                        ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
+                    }.onFailure { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
                 }
             }
 
@@ -177,6 +269,37 @@ private fun SetupScreen() {
                     ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}")))
                 })
             }
+            SectionCard("Tanılama", "Uygulama neden kapanıyor?") {
+                val cs2 = MaterialTheme.colorScheme
+                Text(
+                    "Erişilebilirlik: " + (if (!a11y) "kapalı" else if (connected) "bağlı" else "ÇALIŞMIYOR") +
+                        "   Bildirim erişimi: " + (if (listener) "açık" else "kapalı"),
+                    color = cs2.onSurface, fontSize = 13.sp, fontWeight = FontWeight.Medium,
+                )
+                if (exits.isEmpty()) {
+                    Text("Kayıtlı bir süreç sonlanması yok.", color = cs2.onSurfaceVariant, fontSize = 12.sp)
+                } else {
+                    Text("Son kapanmalar:\n" + exits.joinToString("\n"), color = cs2.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+                crash?.let {
+                    Text("Son çökme kaydı:\n" + it.take(900), color = Color(0xFFFF6B5E), fontSize = 11.sp, lineHeight = 15.sp)
+                }
+                IslandActionButton("Tanılamayı kopyala", {
+                    copyText(ctx, "diag", buildString {
+                        appendLine("a11y enabled=$a11y connected=$connected listener=$listener battery=$battery")
+                        exits.forEach { appendLine(it) }
+                        crash?.let { appendLine(it) }
+                    })
+                })
+                if (!ctx.canHealA11y()) {
+                    Text(
+                        "Otomatik onarım için (bir kez, bilgisayardan):\n$ADB_GRANT",
+                        color = cs2.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp,
+                    )
+                    IslandActionButton("adb komutunu kopyala", { copyText(ctx, "adb", ADB_GRANT) })
+                }
+                if (crash != null) IslandActionButton("Çökme kaydını sil", { CrashLog.clear(ctx); crash = null })
+            }
             Spacer(Modifier.height(8.dp))
         }
 
@@ -184,8 +307,12 @@ private fun SetupScreen() {
             ActionBtn(
                 "Başlat", primary = true, enabled = canStart, modifier = Modifier.weight(1f),
                 onClick = {
-                    ContextCompat.startForegroundService(ctx, Intent(ctx, IslandOverlayService::class.java))
-                    IslandNotificationListener.republish(ctx)   // servis zaten açıksa da mevcut müziği tekrar yayınla
+                    scope.launch {
+                        // Servis çökmüşse önce onar (izin verilmişse), sonra adayı başlat
+                        if (ctx.hasAccessibility() && !a11yConnected() && healAccessibility(ctx)) { delay(1200); connected = a11yConnected() }
+                        ContextCompat.startForegroundService(ctx, Intent(ctx, IslandOverlayService::class.java))
+                        IslandNotificationListener.republish(ctx, force = true)   // servis zaten açıksa da mevcut müziği tekrar yayınla
+                    }
                 },
             )
             ActionBtn(
@@ -236,7 +363,7 @@ private fun StatusBanner(missing: List<String>) {
 }
 
 @Composable
-private fun PermRow(title: String, desc: String, granted: Boolean, required: Boolean, onOpen: () -> Unit) {
+private fun PermRow(title: String, desc: String, granted: Boolean, required: Boolean, action: String = "Aç", onOpen: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val ok = Color(0xFF4CD964)
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -257,7 +384,7 @@ private fun PermRow(title: String, desc: String, granted: Boolean, required: Boo
             )
         } else {
             Text(
-                "Aç", color = cs.onPrimaryContainer, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                action, color = cs.onPrimaryContainer, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clip(RoundedCornerShape(50)).background(cs.primaryContainer)
                     .clickable(onClick = onOpen).padding(horizontal = 16.dp, vertical = 8.dp),
             )
