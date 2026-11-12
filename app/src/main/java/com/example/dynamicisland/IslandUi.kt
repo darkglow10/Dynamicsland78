@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.max
 import kotlin.math.min
@@ -97,6 +98,8 @@ fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean): IslandProgre
     return remember(pw, ph) { IslandProgress(pw, ph) }
 }
 
+private const val EXPAND_LEAD_MS = 70L
+
 @Composable
 fun IslandRoot(
     state: StateFlow<IslandUiState>,
@@ -111,7 +114,14 @@ fun IslandRoot(
     val lyrics by lyricsFlow.collectAsState()
     val content = s.content
     val media = content as? IslandContent.Media
-    val progress = rememberIslandProgress(cfg, s.expanded)
+    // Açılırken animasyonu çok kısa geciktir: pencere önce büyüsün, animasyonun ilk (en hızlı) kareleri
+    // küçük pencereye çizilip kırpılmasın ("yaylı" animasyonda açılışta takılma). Kapanış gecikmesizdir.
+    var animExpanded by remember { mutableStateOf(s.expanded) }
+    LaunchedEffect(s.expanded) {
+        if (s.expanded && cfg.animEnabled) delay(EXPAND_LEAD_MS)
+        animExpanded = s.expanded
+    }
+    val progress = rememberIslandProgress(cfg, animExpanded)
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
     val frame = rememberLyricFrame(
         media, lyrics, cfg.lyricsOffsetMs.toLong(),
@@ -370,7 +380,7 @@ fun IslandPill(
                 content.art?.let { art ->
                     Image(
                         bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
-                        filterQuality = FilterQuality.High,
+                        filterQuality = FilterQuality.Medium,
                         modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
                             .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
                     )
@@ -407,7 +417,7 @@ private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: Isla
     ) {
         Image(
             bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
-            filterQuality = FilterQuality.High, modifier = Modifier.fillMaxSize(),
+            filterQuality = FilterQuality.Low, modifier = Modifier.fillMaxSize(),
         )
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.50f)))
     }

@@ -191,7 +191,7 @@ fun MusicPanel(
 fun AlbumArt(art: ImageBitmap?, size: Dp) {
     val shape = RoundedCornerShape(12.dp)
     if (art != null) {
-        Image(bitmap = art, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.High,
+        Image(bitmap = art, contentDescription = null, contentScale = ContentScale.Crop, filterQuality = FilterQuality.Medium,
             modifier = Modifier.size(size).clip(shape).border(1.dp, Color.White.copy(alpha = 0.10f), shape))
     } else {
         Box(Modifier.size(size).clip(shape).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {

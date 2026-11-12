@@ -314,6 +314,22 @@ fun LyricLineText(
                 constraints = Constraints(maxWidth = if (scroll) Constraints.Infinity else maxPx),
             )
         }
+        // "Adadan tek tek" modu: her kelime ayrı bir metin düzeni olarak ölçülür (komşu harf kırıntısı çıkmasın)
+        val wordLayouts = remember(layout, words, wordMode) {
+            if (!wordMode) emptyList() else {
+                val visEnd = layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)
+                words.map { w ->
+                    val e = minOf(w.end, visEnd)
+                    if (w.start >= e) null else measurer.measure(
+                        text = text.substring(w.start, e),
+                        style = style,
+                        overflow = TextOverflow.Clip,
+                        softWrap = false,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
         val textW = layout.size.width
         val textH = layout.size.height
         val canvasW = if (scroll) maxPx else minOf(textW, maxPx)
@@ -356,30 +372,41 @@ fun LyricLineText(
                     // Adanın bu canvas'a göre konumu
                     val ix = size.width / 2f + origin.dx - dx
                     val iy = size.height / 2f + origin.dy
+                    val gb = bleed * 2.5f + 4f          // parıltı yayılımını kesmeyecek kadar geniş kırpma payı
                     for ((i, w) in words.withIndex()) {
                         if (w.start >= visEnd) break
                         val a = wordAnims.getOrNull(i)?.value ?: 1f
                         if (a <= 0.001f) continue
+                        val wl = wordLayouts.getOrNull(i) ?: continue
                         val endC = minOf(w.end, visEnd)
                         val bl = layout.getBoundingBox(w.start)
                         val br = layout.getBoundingBox((endC - 1).coerceAtLeast(w.start))
                         val ln = layout.getLineForOffset(w.start)
                         val rect = Rect(bl.left, layout.getLineTop(ln), br.right, layout.getLineBottom(ln))
+                        val topLeft = Offset(bl.left, layout.getLineTop(ln))
                         val pivot = rect.center
                         val sc = 0.12f + 0.88f * a
                         val tx = (ix - pivot.x) * (1f - a)
                         val ty = (iy - pivot.y) * (1f - a)
                         val alpha = (a * 3f).coerceIn(0f, 1f)
                         val wf = if (cfg.lyricsFillEnabled) ((progress * len - w.start) / (endC - w.start).coerceAtLeast(1)).coerceIn(0f, 1f) else 1f
+                        // Parıltı kelime adadan çıkarken çizilmez, yerine yaklaşınca yumuşakça belirir:
+                        // küçülen kelimede sabit yarıçaplı parıltı kenarlardan taşıp ince çizgiler oluşturuyordu.
+                        val gA = ((a - 0.6f) / 0.4f).coerceIn(0f, 1f)
+                        val wShadow: Shadow? = when {
+                            glowPx > 0f -> if (gA > 0f) Shadow(color.copy(alpha = color.alpha * 0.8f * gA), Offset.Zero, glowPx) else null
+                            outside -> shadow
+                            else -> null
+                        }
+                        // Her kelime KENDİ metniyle çizilir: tüm satırı kırpıp çizmek, komşu kelimelerin
+                        // harf kenarlarını da (kırpma payı içinde kalan) ince çizgiler olarak gösteriyordu.
                         withTransform({ translate(tx, ty); scale(sc, sc, pivot) }) {
-                            clipRect(rect.left - bleed - 2f, rect.top - bleed, rect.right + bleed + 2f, rect.bottom + bleed) {
-                                if (wf < 0.999f) drawText(layout, color = dim.copy(alpha = dim.alpha * alpha), shadow = if (outside && glowPx <= 0f) shadow else null)
-                                if (wf >= 0.999f) {
-                                    drawText(layout, color = color.copy(alpha = color.alpha * alpha), shadow = shadow)
-                                } else if (wf > 0f) {
-                                    clipRect(rect.left - bleed - 2f, rect.top - bleed, rect.left + rect.width * wf, rect.bottom + bleed) {
-                                        drawText(layout, color = color.copy(alpha = color.alpha * alpha), shadow = shadow)
-                                    }
+                            if (wf < 0.999f) drawText(wl, color = dim.copy(alpha = dim.alpha * alpha), topLeft = topLeft, shadow = if (outside && glowPx <= 0f) shadow else null)
+                            if (wf >= 0.999f) {
+                                drawText(wl, color = color.copy(alpha = color.alpha * alpha), topLeft = topLeft, shadow = wShadow)
+                            } else if (wf > 0f) {
+                                clipRect(rect.left - gb, rect.top - gb, rect.left + rect.width * wf, rect.bottom + gb) {
+                                    drawText(wl, color = color.copy(alpha = color.alpha * alpha), topLeft = topLeft, shadow = wShadow)
                                 }
                             }
                         }
