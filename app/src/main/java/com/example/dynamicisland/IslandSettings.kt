@@ -76,7 +76,7 @@ data class IslandSettings(
     val lyricsGlowLevel: Float = 0.5f,
     // Satır geçiş animasyonu
     val lyricsAnimEnabled: Boolean = true,
-    val lyricsAnimStyle: Int = 0,            // 0 Solma, 1 Yukarı kayma, 2 Yakınlaşma, 3 Yaylı zıplama, 4 Yatay kayma, 5 Anında
+    val lyricsAnimStyle: Int = 0,            // 0 Solma, 1 Yukarı kayma, 2 Yakınlaşma, 3 Yaylı zıplama, 4 Yatay kayma, 5 Anında, 6 Adadan çıkış, 7 Adadan tek tek, 8 Soldan açılma, 9 Çevirme, 10 Odak çekme
     val lyricsAnimMs: Int = 380,
 ) {
     /** Pencerenin ada etrafında bırakacağı pay (parıltı / zıplama taşması için). */
