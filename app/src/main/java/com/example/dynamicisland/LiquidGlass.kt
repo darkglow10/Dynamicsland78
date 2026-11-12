@@ -107,7 +107,6 @@ private val BACKDROP_AGSL = """
 uniform shader bg;
 uniform float2 size;
 uniform float2 origin;
-uniform float2 screen;
 uniform float scale;
 uniform float radius;
 uniform float bevel;
@@ -119,13 +118,6 @@ float sdf(float2 p) {
     float2 hs = size * 0.5;
     float2 q = abs(p - hs) - (hs - float2(radius));
     return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
-}
-
-// Ekran dışına taşan örnekleri aynalar (üst kenarda çizgi uzaması olmasın)
-float2 mirrorTo(float2 p, float2 lim) {
-    float2 m = lim * 2.0;
-    float2 q = mod(p, m);
-    return lim - abs(lim - q);
 }
 
 half4 main(float2 fc) {
@@ -140,16 +132,15 @@ half4 main(float2 fc) {
     float l = length(n);
     n = l > 0.0001 ? n / l : float2(0.0, -1.0);
 
-    // Örnek noktası HER ZAMAN adanın DIŞINDA: önce kenara kadar (depth), sonra e kadar dışarı.
-    // Böylece ada kendi içeriğini (yazı, butonlar) yakalayıp tekrar çizmez.
-    float e = 2.0 + reach * t * t;
+    // Örnek, adanın İÇİNDEN ama kenar bandının hemen ötesinden alınır:
+    //  - Sadece adanın gerçekten üstünde olduğu içerik görünür (dışarıdaki yazı karışmaz).
+    //  - Band içi (kırılma çizilen yer) örneklenmez, böylece kendi çıktısını tekrar yakalamaz.
+    // Kenarda (t=1) bevel+reach kadar içeriden, bant iç sınırında (t=0) tam kendi yerinden alır.
+    float shift = (bevel - depth) + reach * t * t;
     float2 sp = origin + fc;
-    float2 pr = mirrorTo(sp + n * (depth + e * (1.0 + disp)), screen);
-    float2 pg = mirrorTo(sp + n * (depth + e), screen);
-    float2 pb = mirrorTo(sp + n * (depth + e * (1.0 - disp)), screen);
-    half4 cr = bg.eval(pr * scale);
-    half4 cg = bg.eval(pg * scale);
-    half4 cb = bg.eval(pb * scale);
+    half4 cr = bg.eval((sp - n * shift * (1.0 + disp)) * scale);
+    half4 cg = bg.eval((sp - n * shift) * scale);
+    half4 cb = bg.eval((sp - n * shift * (1.0 - disp)) * scale);
     float a = clamp(strength * t, 0.0, 1.0);
     return half4(half3(cr.r, cg.g, cb.b) * half(a), half(a));
 }
@@ -175,15 +166,15 @@ fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float): Modifier {
             shader.setInputShader("bg", f.shader)
             shader.setFloatUniform("size", w, h)
             shader.setFloatUniform("origin", loc[0] + pos[0], loc[1] + pos[1])
-            val dm = view.resources.displayMetrics
-            shader.setFloatUniform("screen", dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
             shader.setFloatUniform("scale", f.scale)
             shader.setFloatUniform("radius", r)
-            // Bant genişliği adanın boyutundan bağımsız, dp ile sınırlı (açık adada devasa olmasın)
-            shader.setFloatUniform("bevel", min(minDim * 0.45f, 18.dp.toPx()))
-            shader.setFloatUniform("reach", refraction.coerceIn(0f, 1.5f) * min(minDim * 0.30f, 14.dp.toPx()))
-            shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.35f)
-            shader.setFloatUniform("strength", 0.95f)
+            // Bant: dp ile sınırlı. reach: bandın ötesinden ne kadar içeriden örnekleneceği
+            // (adanın kendi yazı/kapağına girmemesi için küçük tutulur).
+            val bevel = min(minDim * 0.30f, 12.dp.toPx())
+            shader.setFloatUniform("bevel", bevel)
+            shader.setFloatUniform("reach", min(refraction.coerceIn(0f, 1.5f) * 5.dp.toPx(), minDim * 0.15f))
+            shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.25f)
+            shader.setFloatUniform("strength", 0.9f)
             drawRect(ShaderBrush(shader))
         }
 }
