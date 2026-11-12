@@ -43,7 +43,10 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
@@ -138,7 +141,7 @@ fun rememberLyricFrame(
  * Yalnızca "Adanın dışında" söz penceresi doldurur; diğer yerlerde (0, 0) kalır ve söz kendi yerinde küçülüp büyür.
  */
 @Immutable
-data class LyricOrigin(val dx: Float = 0f, val dy: Float = 0f)
+data class LyricOrigin(val dx: Float = 0f, val dy: Float = 0f, val ix: Float = Float.NaN, val iy: Float = Float.NaN)
 
 val LocalLyricOrigin = compositionLocalOf { LyricOrigin() }
 
@@ -512,12 +515,37 @@ fun OutsideLyricsRoot(
         if (cfg.lyricsFromIsland()) {
             // Pencere adaya kadar uzatıldı (üstte boş pay var): söz alanı altta, eski yerinde kalır; sözler adadan çıkıp oraya gelir
             val areaDp = (cfg.lyricsOutsideSizeSp * LocalDensity.current.fontScale * 1.3f * cfg.lyricsOutsideLines).dp
-            CompositionLocalProvider(LocalLyricOrigin provides origin) {
+            // Söz alanının ekrandaki GERÇEK merkezi ölçülür; sistem pencereyi kaydırsa bile adaya olan uzaklık doğru çıkar
+            val hostView = LocalView.current
+            var areaCenter by remember { mutableStateOf<Offset?>(null) }
+            val areaCoords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+            fun measureArea() {
+                val c = areaCoords[0]?.takeIf { it.isAttached } ?: return
+                val loc = IntArray(2)
+                hostView.getLocationOnScreen(loc)
+                val p = c.positionInRoot()
+                val nc = Offset(loc[0] + p.x + c.size.width / 2f, loc[1] + p.y + c.size.height / 2f)
+                val old = areaCenter
+                if (old == null || (old - nc).getDistance() > 1.5f) areaCenter = nc
+            }
+            // Sistem pencereyi sonradan kaydırabilir (düzen değişmeden): konumu düzenli aralıkla yeniden ölç
+            LaunchedEffect(Unit) { while (true) { delay(400); measureArea() } }
+            val effOrigin = remember(origin, areaCenter) {
+                val c = areaCenter
+                if (c != null && !origin.ix.isNaN() && !origin.iy.isNaN()) LyricOrigin(dx = origin.ix - c.x, dy = origin.iy - c.y) else origin
+            }
+            CompositionLocalProvider(LocalLyricOrigin provides effOrigin) {
                 Box(
                     Modifier.fillMaxSize().padding(24.dp).graphicsLayer { this.alpha = shownAlpha },
                     contentAlignment = Alignment.BottomCenter,
                 ) {
-                    Box(Modifier.fillMaxWidth().height(areaDp), contentAlignment = Alignment.Center) {
+                    Box(
+                        Modifier.fillMaxWidth().height(areaDp).onGloballyPositioned { c ->
+                            areaCoords[0] = c
+                            measureArea()
+                        },
+                        contentAlignment = Alignment.Center,
+                    ) {
                         OutsideLyricText(cfg, lyrics, frame, Modifier.fillMaxWidth(), artColor = media?.artColor ?: 0)
                     }
                 }
