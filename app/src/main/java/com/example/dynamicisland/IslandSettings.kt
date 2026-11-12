@@ -36,6 +36,11 @@ data class IslandSettings(
     val glassEnabled: Boolean = false,
     val glassAlpha: Float = 0.55f,
     val blurRadiusPx: Int = 40,
+    // Sıvı cam (kırılma shader'ı + derinlik + speküler); cam efekti açıkken seçilebilir
+    val liquidEnabled: Boolean = false,
+    val liquidRefraction: Float = 0.6f,      // kenarda içeriğin bükülme miktarı
+    val liquidDispersion: Float = 0.5f,      // kenarda renk ayrışması
+    val liquidSpecular: Float = 0.8f,        // parlama / yansıma şiddeti
     // Parıltı
     val glowEnabled: Boolean = true,
     val glowIntensity: Float = 0.6f,
@@ -135,6 +140,8 @@ class SettingsRepository(context: Context) {
         val COLOR = intPreferencesKey("color"); val DYN = booleanPreferencesKey("dyn")
         val ART_BG = booleanPreferencesKey("art_bg"); val ART_BG_C = booleanPreferencesKey("art_bg_c")
         val GLASS = booleanPreferencesKey("glass"); val ALPHA = floatPreferencesKey("alpha"); val BLUR = intPreferencesKey("blur")
+        val LQ_ON = booleanPreferencesKey("lq_on"); val LQ_R = floatPreferencesKey("lq_r")
+        val LQ_D = floatPreferencesKey("lq_d"); val LQ_S = floatPreferencesKey("lq_s")
         val GLOW = booleanPreferencesKey("glow"); val GLOW_I = floatPreferencesKey("glowI")
         val PG_ON = booleanPreferencesKey("pg_on"); val PG_ART = booleanPreferencesKey("pg_art")
         val PG_COLOR = intPreferencesKey("pg_color"); val PG_I = floatPreferencesKey("pg_i"); val PG_TIP = booleanPreferencesKey("pg_tip"); val PG_IN = booleanPreferencesKey("pg_in")
@@ -173,6 +180,10 @@ class SettingsRepository(context: Context) {
             glassEnabled = p[K.GLASS] ?: d.glassEnabled,
             glassAlpha = p[K.ALPHA] ?: d.glassAlpha,
             blurRadiusPx = p[K.BLUR] ?: d.blurRadiusPx,
+            liquidEnabled = p[K.LQ_ON] ?: d.liquidEnabled,
+            liquidRefraction = p[K.LQ_R] ?: d.liquidRefraction,
+            liquidDispersion = p[K.LQ_D] ?: d.liquidDispersion,
+            liquidSpecular = p[K.LQ_S] ?: d.liquidSpecular,
             glowEnabled = p[K.GLOW] ?: d.glowEnabled,
             glowIntensity = p[K.GLOW_I] ?: d.glowIntensity,
             progressGlowEnabled = p[K.PG_ON] ?: d.progressGlowEnabled,
@@ -223,6 +234,8 @@ class SettingsRepository(context: Context) {
             it[K.COLOR] = s.accentArgb; it[K.DYN] = s.dynamicColor
             it[K.ART_BG] = s.artBgEnabled; it[K.ART_BG_C] = s.artBgCompact
             it[K.GLASS] = s.glassEnabled; it[K.ALPHA] = s.glassAlpha; it[K.BLUR] = s.blurRadiusPx
+            it[K.LQ_ON] = s.liquidEnabled; it[K.LQ_R] = s.liquidRefraction
+            it[K.LQ_D] = s.liquidDispersion; it[K.LQ_S] = s.liquidSpecular
             it[K.GLOW] = s.glowEnabled; it[K.GLOW_I] = s.glowIntensity
             it[K.PG_ON] = s.progressGlowEnabled; it[K.PG_ART] = s.progressGlowArtColor
             it[K.PG_COLOR] = s.progressGlowColorArgb; it[K.PG_I] = s.progressGlowIntensity; it[K.PG_TIP] = s.progressGlowTipOnly

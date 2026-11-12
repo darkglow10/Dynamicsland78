@@ -137,6 +137,19 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 if (draft.glassEnabled) {
                     SliderRow("Şeffaflık", draft.glassAlpha, 0.10f..0.90f, "%${(draft.glassAlpha * 100).toInt()}") { draft = draft.copy(glassAlpha = it) }
                     SliderRow("Arka plan bulanıklığı", draft.blurRadiusPx.toFloat(), 0f..80f, "${draft.blurRadiusPx} px") { draft = draft.copy(blurRadiusPx = it.toInt()) }
+                    SectionDivider()
+                    SwitchRow("Sıvı cam (kırılma)", "Kenarlarda içeriği büken, renk ayıran ve derinlik / parlama ekleyen gerçekçi cam",
+                        draft.liquidEnabled) { draft = draft.copy(liquidEnabled = it) }
+                    if (draft.liquidEnabled) {
+                        if (liquidRefractionSupported()) {
+                            SliderRow("Kırılma", draft.liquidRefraction, 0f..1.5f, "%${(draft.liquidRefraction * 100).toInt()}") { draft = draft.copy(liquidRefraction = it) }
+                            SliderRow("Renk ayrışması", draft.liquidDispersion, 0f..1f, "%${(draft.liquidDispersion * 100).toInt()}") { draft = draft.copy(liquidDispersion = it) }
+                        } else {
+                            Text("Kırılma shader'ı Android 13+ gerektirir; bu cihazda yalnızca derinlik ve parlama çizilir.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                        }
+                        SliderRow("Parlama", draft.liquidSpecular, 0f..1.5f, "%${(draft.liquidSpecular * 100).toInt()}") { draft = draft.copy(liquidSpecular = it) }
+                    }
                     if (draft.windowPadDp() > 0f) {
                         Text("Not: Parıltı veya Zıplamalı animasyon açıkken bulanıklık devre dışı kalır.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
