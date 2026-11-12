@@ -116,6 +116,14 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
 
             // ---- Görünüm
             GroupLabel("Görünüm")
+
+            SectionCard("Gökkuşağı modu", "Ada, müzik paneli, mesaj ve şarkı sözleri gökkuşağı renklerinde akar") {
+                SwitchRow("Gökkuşağı modu", "Açıkken ilgili öğelerde diğer renk ayarları yerine gökkuşağı kullanılır",
+                    draft.rainbowEnabled) { draft = draft.copy(rainbowEnabled = it) }
+                if (draft.rainbowEnabled) {
+                    SliderRow("Saydamlık", draft.rainbowAlpha, 0.2f..1f, "%${(draft.rainbowAlpha * 100).toInt()}") { draft = draft.copy(rainbowAlpha = it) }
+                }
+            }
             SectionCard("Renk", "Adanın genel renk davranışı") {
                 SwitchRow("Albüm kapağı rengi", "Ada rengi, çalan şarkının kapağına göre değişir",
                     draft.dynamicColor) { draft = draft.copy(dynamicColor = it) }

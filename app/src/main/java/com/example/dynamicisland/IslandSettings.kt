@@ -65,6 +65,10 @@ data class IslandSettings(
     // Görünürlük
     val showIdle: Boolean = false,           // müzik/bildirim yokken de ada görünsün
 
+    // Gökkuşağı modu
+    val rainbowEnabled: Boolean = false,
+    val rainbowAlpha: Float = 0.85f,         // gökkuşağının saydamlığı (1 = tam opak)
+
     // ---------------------------------------------------------- Şarkı sözleri
     val lyricsEnabled: Boolean = true,
     val lyricsInPanel: Boolean = true,       // genişletilmiş adanın içinde
@@ -150,6 +154,7 @@ class SettingsRepository(context: Context) {
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
         val IDLE = booleanPreferencesKey("idle")
+        val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
 
         val LY_ON = booleanPreferencesKey("ly_on"); val LY_PANEL = booleanPreferencesKey("ly_panel")
         val LY_COMPACT = booleanPreferencesKey("ly_compact"); val LY_OUT = booleanPreferencesKey("ly_out")
@@ -200,6 +205,8 @@ class SettingsRepository(context: Context) {
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
             showIdle = p[K.IDLE] ?: d.showIdle,
+            rainbowEnabled = p[K.RB_ON] ?: d.rainbowEnabled,
+            rainbowAlpha = p[K.RB_A] ?: d.rainbowAlpha,
             lyricsEnabled = p[K.LY_ON] ?: d.lyricsEnabled,
             lyricsInPanel = p[K.LY_PANEL] ?: d.lyricsInPanel,
             lyricsCompact = p[K.LY_COMPACT] ?: d.lyricsCompact,
@@ -245,6 +252,7 @@ class SettingsRepository(context: Context) {
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
             it[K.IDLE] = s.showIdle
+            it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha
             it[K.LY_ON] = s.lyricsEnabled; it[K.LY_PANEL] = s.lyricsInPanel
             it[K.LY_COMPACT] = s.lyricsCompact; it[K.LY_OUT] = s.lyricsOutside
             it[K.LY_P_SIZE] = s.lyricsPanelSizeSp; it[K.LY_P_LINES] = s.lyricsPanelLines
