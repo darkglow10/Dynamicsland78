@@ -26,23 +26,14 @@ import kotlin.math.max
 import kotlin.math.min
 import android.graphics.RenderEffect as AndroidRenderEffect
 
-/**
- * Sıvı cam (Liquid Glass) katmanları.
- *
- * NOT: Android, üçüncü parti overlay'in başka uygulamaların piksellerini okumasına izin vermez. Bu yüzden:
- *  - arkadaki gerçek ekran: pencere blur'u + cam rengi (IslandOverlayService.setBlur, zaten var)
- *  - adanın KENDİ içeriği (kapak, yazı, butonlar): AGSL kırılma shader'ı ile kenarlarda bükülür (Android 13+)
- *  - derinlik gradyanı, iç gölge, kenar parlaması: aşağıdaki çizim fonksiyonları (tüm sürümlerde çalışır)
- */
-
 private val LiquidMaxRadius = 36.dp
 
 /**
- * Kenar kırılması: yuvarlatılmış dikdörtgenin SDF'inden kenara uzaklık bulunur; kenara yakın bantta
- * (bevel) örnekleme noktası içeri kaydırılır => cam kenarında içerik büyüyüp bükülür (dışbükey mercek).
- * R/G/B kanalları biraz farklı kaydırılır => kenarda ince renk ayrışması (kromatik dispersiyon).
+ * Düzeltilmiş AGSL Shader:
+ * Keskin sign(p) sıçramaları kaldırıldı, merkez korunarak yalnızca dış kenarlarda 
+ * pürüzsüz mercek bükülmesi ve renk ayrışması (dispersion) sağlandı.
  */
-private const val LIQUID_AGSL = """
+private val LIQUID_AGSL = """
 uniform shader content;
 uniform float2 size;
 uniform float radius;
@@ -55,21 +46,16 @@ half4 main(float2 fragCoord) {
     float2 p = fragCoord - hs;
     float2 q = abs(p) - (hs - float2(radius));
     float dist = length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
-    float depth = -dist;
-    float t = clamp(1.0 - depth / bevel, 0.0, 1.0);
-    t = t * t * (3.0 - 2.0 * t);
+    float depth = -dist; // Kenara olan mesafe (0 = dış sınır, pozitif = iç kısım)
+    
+    // Yalnızca kenara yakın dar bir bantta (bevel) kırılma uygula, merkezi koru
+    float t = clamp(depth / bevel, 0.0, 1.0);
+    t = 1.0 - (t * t * (3.0 - 2.0 * t)); // Pürüzsüz lens geçiş eğrisi
 
-    float2 s = sign(p);
-    float2 g;
-    if (q.x > 0.0 || q.y > 0.0) {
-        g = normalize(max(q, float2(0.0))) * s;
-    } else if (q.x > q.y) {
-        g = float2(s.x, 0.0);
-    } else {
-        g = float2(0.0, s.y);
-    }
+    // Merkezde sıçrama yaratmayan pürüzsüz yön vektörü
+    float2 dir = length(p) > 0.001 ? p / length(p) : float2(0.0);
 
-    float2 off = g * bend * t;
+    float2 off = dir * bend * t;
     half4 cr = content.eval(fragCoord - off * (1.0 + disp));
     half4 cg = content.eval(fragCoord - off);
     half4 cb = content.eval(fragCoord - off * (1.0 - disp));
@@ -78,13 +64,8 @@ half4 main(float2 fragCoord) {
 }
 """
 
-/** Android 13+ cihazda liquid glass kırılma shader'ı kullanılabilir mi? */
 fun liquidRefractionSupported(): Boolean = Build.VERSION.SDK_INT >= 33
 
-/**
- * Altındaki içeriği (kapak, yazılar, butonlar) kenarlarda büken modifier.
- * Android 13'ün altında hiçbir şey yapmaz (yalnızca çizilen cam katmanları kalır).
- */
 @SuppressLint("NewApi")
 @Composable
 fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
@@ -94,33 +75,28 @@ fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
     return this
         .onSizeChanged { sz = it }
         .graphicsLayer {
-            // sz burada okunur: boyut animasyonda değişince yalnızca katman güncellenir (recomposition yok)
             val w = sz.width.toFloat()
             val h = sz.height.toFloat()
             if (w < 2f || h < 2f) return@graphicsLayer
             val r = min(LiquidMaxRadius.toPx(), h / 2f)
             shader.setFloatUniform("size", w, h)
             shader.setFloatUniform("radius", r)
-            shader.setFloatUniform("bevel", min(14.dp.toPx(), h / 2f))
-            shader.setFloatUniform("bend", refraction.coerceIn(0f, 1.5f) * 10.dp.toPx())
-            shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.6f)
+            // Bevel daraltıldı (en fazla 5dp veya yüksekliğin dörtte biri), merkez bozulmaz
+            shader.setFloatUniform("bevel", min(5.dp.toPx(), h * 0.25f))
+            shader.setFloatUniform("bend", refraction.coerceIn(0f, 1.5f) * 4.dp.toPx())
+            shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.4f)
             renderEffect = AndroidRenderEffect
                 .createRuntimeShaderEffect(shader, "content")
                 .asComposeRenderEffect()
         }
 }
 
-/**
- * İçeriğin ARKASINA çizilir: derinlik gradyanı (üstte ışık, altta gölge), kenarlarda iç gölge,
- * sol üstte yumuşak speküler, sağ altta ışık toplanması (caustic), kenara doğru incelen parlak halkalar.
- */
 fun DrawScope.drawLiquidBase(specular: Float) {
     val w = size.width; val h = size.height
     if (w <= 1f || h <= 1f) return
     val k = specular.coerceIn(0f, 1.5f)
     val r = min(LiquidMaxRadius.toPx(), h / 2f)
 
-    // 1) Derinlik: üstte cam ışığı, altta koyulaşma
     drawRect(
         Brush.verticalGradient(
             0f to Color.White.copy(0.20f * k),
@@ -130,7 +106,6 @@ fun DrawScope.drawLiquidBase(specular: Float) {
         )
     )
 
-    // 2) İç gölge: cam kalınlığı hissi (altta daha koyu, üstte yok)
     val shadowRings = 7
     val sStep = 1.3.dp.toPx()
     for (i in 0 until shadowRings) {
@@ -145,7 +120,6 @@ fun DrawScope.drawLiquidBase(specular: Float) {
         )
     }
 
-    // 3) Sol üst speküler parlama
     drawRect(
         Brush.radialGradient(
             0f to Color.White.copy(0.26f * k),
@@ -156,7 +130,6 @@ fun DrawScope.drawLiquidBase(specular: Float) {
         )
     )
 
-    // 4) Sağ alt caustic: ışığın cam içinden geçip toplandığı yer
     drawRect(
         Brush.radialGradient(
             0f to Color.White.copy(0.14f * k),
@@ -166,7 +139,6 @@ fun DrawScope.drawLiquidBase(specular: Float) {
         )
     )
 
-    // 5) Kenara doğru incelen iç ışık halkaları (lens / kırılma hissi)
     val rings = 6
     val step = 1.4.dp.toPx()
     for (i in 0 until rings) {
@@ -182,17 +154,12 @@ fun DrawScope.drawLiquidBase(specular: Float) {
     }
 }
 
-/**
- * İçeriğin ÜSTÜNE çizilir: ince kenar ışığı (sol üst ve sağ alt parlak, ortası sönük),
- * üst kenarda speküler çizgi, alt kenarda caustic çizgisi, köşelerde yansıma yayları.
- */
 fun DrawScope.drawLiquidRim(specular: Float) {
     val w = size.width; val h = size.height
     if (w <= 1f || h <= 1f) return
     val k = specular.coerceIn(0f, 1.5f)
     val r = min(LiquidMaxRadius.toPx(), h / 2f)
 
-    // Ana kenar halkası
     val sw = 1.4.dp.toPx()
     drawRoundRect(
         brush = Brush.linearGradient(
@@ -208,7 +175,6 @@ fun DrawScope.drawLiquidRim(specular: Float) {
         style = Stroke(width = sw),
     )
 
-    // İç ikinci halka: kenar kalınlığı
     val sw2 = 0.8.dp.toPx()
     val off = sw + sw2 / 2f
     drawRoundRect(
@@ -219,7 +185,6 @@ fun DrawScope.drawLiquidRim(specular: Float) {
         style = Stroke(width = sw2),
     )
 
-    // Köşe yansıma yayları: sol üstte güçlü, sağ altta hafif
     val arcW = 2.2.dp.toPx()
     val ar = (r - 1.5.dp.toPx()).coerceAtLeast(2f)
     drawArc(
@@ -243,7 +208,6 @@ fun DrawScope.drawLiquidRim(specular: Float) {
 
     if (w > 2.2f * r) {
         val x0 = r * 0.9f; val x1 = w - r * 0.9f
-        // Üst speküler çizgi
         val yTop = 1.9.dp.toPx()
         drawLine(
             brush = Brush.horizontalGradient(
@@ -256,7 +220,6 @@ fun DrawScope.drawLiquidRim(specular: Float) {
             start = Offset(x0, yTop), end = Offset(x1, yTop),
             strokeWidth = 1.1.dp.toPx(), cap = StrokeCap.Round,
         )
-        // Alt caustic çizgisi (ışığın karşı kenarda toplanması)
         val yBot = h - 1.9.dp.toPx()
         drawLine(
             brush = Brush.horizontalGradient(
