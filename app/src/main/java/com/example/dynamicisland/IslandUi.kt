@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -33,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -130,9 +133,7 @@ fun IslandRoot(
 
 // ---------------------------------------------------------------- Renk / yüzey / parıltı
 private val PillShape = RoundedCornerShape(36.dp)
-private val SheenBrush = Brush.verticalGradient(
-    listOf(Color.White.copy(0.22f), Color.White.copy(0.05f), Color.Transparent, Color.White.copy(0.08f))
-)
+private val GlassMaxRadius = 36.dp
 
 private fun darkTone(c: Color): Color {
     val hsv = FloatArray(3)
@@ -163,11 +164,121 @@ private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color
     }
 }
 
+// ---------------------------------------------------------------- Liquid Glass katmanları
+/**
+ * Liquid Glass — içeriğin ARKASINA çizilen katmanlar:
+ *  1) üstten alta ışık geçişi (camın kalınlığı), alt kenarda hafif ışık toplanması
+ *  2) sol üstte yumuşak speküler parlama
+ *  3) kenarlara doğru incelen iç ışık halkaları (lens / kırılma hissi)
+ */
+private fun DrawScope.drawGlassBase() {
+    val w = size.width; val h = size.height
+    if (w <= 1f || h <= 1f) return
+    val r = min(GlassMaxRadius.toPx(), h / 2f)
+
+    drawRect(
+        Brush.verticalGradient(
+            0f to Color.White.copy(0.17f),
+            0.40f to Color.White.copy(0.04f),
+            0.72f to Color.Transparent,
+            1f to Color.White.copy(0.09f),
+        )
+    )
+    drawRect(
+        Brush.radialGradient(
+            0f to Color.White.copy(0.22f),
+            0.6f to Color.White.copy(0.05f),
+            1f to Color.Transparent,
+            center = Offset(w * 0.20f, h * 0.02f),
+            radius = max(w * 0.60f, h),
+        )
+    )
+    // Alt-sağ köşede çok hafif ikincil parlama (ışığın cam içinden geçip toplandığı yer)
+    drawRect(
+        Brush.radialGradient(
+            0f to Color.White.copy(0.08f),
+            1f to Color.Transparent,
+            center = Offset(w * 0.88f, h * 1.0f),
+            radius = max(w * 0.35f, h * 0.9f),
+        )
+    )
+
+    val rings = 6
+    val step = 1.4.dp.toPx()
+    for (i in 0 until rings) {
+        val inset = i * step + step / 2f
+        val a = 0.12f * (1f - i / rings.toFloat())
+        drawRoundRect(
+            color = Color.White.copy(alpha = a),
+            topLeft = Offset(inset, inset),
+            size = Size((w - 2 * inset).coerceAtLeast(0f), (h - 2 * inset).coerceAtLeast(0f)),
+            cornerRadius = CornerRadius((r - inset).coerceAtLeast(0f)),
+            style = Stroke(width = step),
+        )
+    }
+}
+
+/**
+ * Liquid Glass — içeriğin ÜSTÜNE çizilen ince kenar ışığı (specular rim):
+ * sol-üstte parlak, ortada sönük, sağ-altta tekrar parlak; iOS'taki cam kenarı gibi.
+ */
+private fun DrawScope.drawGlassRim() {
+    val w = size.width; val h = size.height
+    if (w <= 1f || h <= 1f) return
+    val r = min(GlassMaxRadius.toPx(), h / 2f)
+
+    val sw = 1.3.dp.toPx()
+    val rim = Brush.linearGradient(
+        0f to Color.White.copy(0.90f),
+        0.28f to Color.White.copy(0.20f),
+        0.62f to Color.White.copy(0.07f),
+        1f to Color.White.copy(0.55f),
+        start = Offset.Zero, end = Offset(w, h),
+    )
+    drawRoundRect(
+        brush = rim,
+        topLeft = Offset(sw / 2f, sw / 2f),
+        size = Size(w - sw, h - sw),
+        cornerRadius = CornerRadius((r - sw / 2f).coerceAtLeast(0f)),
+        style = Stroke(width = sw),
+    )
+
+    // İç ikinci halka: kenarın "kalınlığını" verir
+    val sw2 = 0.7.dp.toPx()
+    val off = sw + sw2 / 2f
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.10f),
+        topLeft = Offset(off, off),
+        size = Size((w - 2 * off).coerceAtLeast(0f), (h - 2 * off).coerceAtLeast(0f)),
+        cornerRadius = CornerRadius((r - off).coerceAtLeast(0f)),
+        style = Stroke(width = sw2),
+    )
+
+    // Üst kenarda ortası parlak, uçları kaybolan speküler çizgi
+    if (w > 2.2f * r) {
+        val y = 1.8.dp.toPx()
+        val x0 = r * 0.9f; val x1 = w - r * 0.9f
+        drawLine(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                0.35f to Color.White.copy(0.55f),
+                0.65f to Color.White.copy(0.30f),
+                1f to Color.Transparent,
+                startX = x0, endX = x1,
+            ),
+            start = Offset(x0, y), end = Offset(x1, y),
+            strokeWidth = 1.1.dp.toPx(), cap = StrokeCap.Round,
+        )
+    }
+}
+
 /** Renk State olarak taşınır, yalnızca çizim fazında okunur => animasyonda recomposition yok. */
 private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>): Modifier {
     var m = this.clip(PillShape).drawBehind { drawRect(body.value) }
-    if (cfg.glassEnabled) m = m.background(SheenBrush)
+    if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase() }
     if (cfg.borderEnabled) m = m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), PillShape)
+    // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
+    if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim() }
     return m
 }
 
