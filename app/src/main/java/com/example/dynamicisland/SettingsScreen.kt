@@ -53,6 +53,11 @@ private val LYRIC_ANIMS = listOf(
     "Yaylı zıplama" to "Yeni satır alttan yaylanarak gelir",
     "Yatay kayma" to "Satırlar yandan kayar",
     "Anında" to "Geçiş animasyonu yok",
+    "Adadan çıkış" to "Söz adanın içinden küçük çıkar, büyüyerek yerine gelir; eski söz adaya geri girer",
+    "Adadan tek tek" to "Önce eski söz adaya girer; sıradaki söz sırası gelince adadan küçük çıkıp büyür",
+    "Soldan açılma" to "Satır soldan sağa açılarak belirir",
+    "Çevirme (3D)" to "Eski satır yatay eksende döner, yenisi dönerek gelir",
+    "Odak çekme" to "Yeni satır büyük başlayıp netleşerek yerine oturur",
 )
 
 @Composable
@@ -322,6 +327,12 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 LYRIC_ANIMS.forEachIndexed { i, (name, desc) ->
                     RadioRow(name, desc, draft.lyricsAnimStyle == i) { set(draft.copy(lyricsAnimStyle = i)) }
                 }
+            }
+            if (draft.lyricsAnimStyle == 6 || draft.lyricsAnimStyle == 7) {
+                Text(
+                    "Not: Sözler, \"Adanın dışında\" açıkken adanın içinden çıkar. Panel ve kapalı adada yerinde küçülüp büyür.",
+                    color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp,
+                )
             }
             if (draft.lyricsAnimStyle != 5) {
                 SliderRow("Süre", draft.lyricsAnimMs.toFloat(), 120f..900f, "${draft.lyricsAnimMs} ms") { set(draft.copy(lyricsAnimMs = it.toInt())) }
