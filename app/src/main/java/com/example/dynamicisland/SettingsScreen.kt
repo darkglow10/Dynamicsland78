@@ -151,6 +151,22 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
+            SectionCard("İlerleme çubuğu parıltısı", "Açık adadaki müzik panelinde, şarkı çubuğunda") {
+                SwitchRow("Parıltı efekti", "Şarkı ilerleme çubuğu ışık yayar", draft.progressGlowEnabled) { draft = draft.copy(progressGlowEnabled = it) }
+                if (draft.progressGlowEnabled) {
+                    SubHeader("Parıltı nerede olsun")
+                    SegmentedTabs(listOf("Tüm çubuk", "Çubuğun ucu"), if (draft.progressGlowTipOnly) 1 else 0) {
+                        draft = draft.copy(progressGlowTipOnly = it == 1)
+                    }
+                    SliderRow("Yoğunluk", draft.progressGlowIntensity, 0.2f..1f, "%${(draft.progressGlowIntensity * 100).toInt()}") { draft = draft.copy(progressGlowIntensity = it) }
+                    SectionDivider()
+                    SwitchRow("Albüm kapağı rengi", "Parıltı, çalan şarkının kapağına göre değişir",
+                        draft.progressGlowArtColor) { draft = draft.copy(progressGlowArtColor = it) }
+                    SubHeader(if (draft.progressGlowArtColor) "Kapak yoksa kullanılacak renk" else "Parıltı rengi")
+                    key(version) { ColorPicker(draft.progressGlowColorArgb) { draft = draft.copy(progressGlowColorArgb = it) } }
+                }
+            }
+
             SectionCard("Çerçeve", "Albüm renginden bağımsız, istediğin renk") {
                 SwitchRow("Çerçeve çizgisi", null, draft.borderEnabled) { draft = draft.copy(borderEnabled = it) }
                 if (draft.borderEnabled) {

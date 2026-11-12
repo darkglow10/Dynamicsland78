@@ -3,6 +3,7 @@ package com.example.dynamicisland
 import android.content.Context
 import android.os.SystemClock
 import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -35,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -44,6 +46,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -165,7 +168,7 @@ fun MusicPanel(
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) PanelLyrics(cfg, lyrics, frame, artColor = m.artColor)
 
-        MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
+        MusicProgress(m, cfg) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp)) {
@@ -206,7 +209,12 @@ private fun fmt(ms: Long): String {
 }
 
 @Composable
-private fun MusicProgress(m: IslandContent.Media, onSeek: (Long) -> Unit) {
+private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, onSeek: (Long) -> Unit) {
+    // Parıltı rengi: kapaktan (açıksa ve kapak varsa), yoksa ayarlardaki renk
+    val baseGlow = if (cfg.progressGlowArtColor && m.artColor != 0) glowTone(Color(m.artColor)) else Color(cfg.progressGlowColorArgb)
+    val glowColor by animateColorAsState(baseGlow, tween(450), label = "progressGlowColor")
+    val glow = if (cfg.progressGlowEnabled) ProgressGlow(glowColor, cfg.progressGlowIntensity, cfg.progressGlowTipOnly) else null
+
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var drag by remember { mutableStateOf<Float?>(null) }
 
@@ -225,7 +233,7 @@ private fun MusicProgress(m: IslandContent.Media, onSeek: (Long) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(fmt(shownMs), color = gray, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.widthIn(min = 32.dp))
         Box(Modifier.weight(1f)) {
-            SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null) { f, commit ->
+            SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null, glow) { f, commit ->
                 if (commit) { drag = null; onSeek((f * dur).toLong()) } else drag = f
             }
         }
@@ -234,8 +242,47 @@ private fun MusicProgress(m: IslandContent.Media, onSeek: (Long) -> Unit) {
     }
 }
 
+@Immutable
+private class ProgressGlow(val color: Color, val intensity: Float, val tipOnly: Boolean)
+
+/** Kapak rengini parıltı için canlı ve parlak bir tona çeker (koyu kapaklarda da görünür kalsın). */
+private fun glowTone(c: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    hsv[1] = (hsv[1] * 1.1f).coerceIn(0.25f, 1f)
+    hsv[2] = hsv[2].coerceAtLeast(0.9f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+/** Çubuğun dolu kısmının arkasına parıltı çizer: tüm çubuk boyunca ya da yalnızca ucunda. */
+private fun DrawScope.drawProgressGlow(g: ProgressGlow, fillW: Float, cy: Float, th: Float) {
+    val k = g.intensity.coerceIn(0f, 1f)
+    if (g.tipOnly) {
+        val r = 18.dp.toPx()
+        val center = Offset(fillW.coerceAtLeast(th / 2), cy)
+        val brush = Brush.radialGradient(
+            0f to g.color.copy(alpha = 0.90f * k),
+            0.35f to g.color.copy(alpha = 0.45f * k),
+            1f to g.color.copy(alpha = 0f),
+            center = center, radius = r,
+        )
+        drawCircle(brush, radius = r, center = center)
+    } else {
+        // Üst üste binen yarı saydam katmanlar: ortası parlak, kenarlara doğru sönen yumuşak ışık
+        val layers = 7
+        for (i in layers downTo 1) {
+            val grow = 16.dp.toPx() * i / layers
+            val h = th + grow
+            drawRoundRect(
+                g.color.copy(alpha = 0.13f * k),
+                Offset(-grow / 2f, cy - h / 2f), Size(fillW + grow, h), CornerRadius(h / 2f),
+            )
+        }
+    }
+}
+
 @Composable
-private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, onChange: (Float, Boolean) -> Unit) {
+private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, glow: ProgressGlow?, onChange: (Float, Boolean) -> Unit) {
     var w by remember { mutableIntStateOf(1) }
     val thick by animateFloatAsState(if (dragging) 8f else 5f, spring(stiffness = Spring.StiffnessMedium), label = "seekThick")
     val cb by rememberUpdatedState(onChange)
@@ -262,7 +309,9 @@ private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, onChan
         val cy = size.height / 2
         val th = thick.dp.toPx()
         drawRoundRect(Color.White.copy(0.22f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
-        drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size((size.width * fraction).coerceAtLeast(0f), th), CornerRadius(th / 2))
+        val fillW = (size.width * fraction).coerceAtLeast(0f)
+        if (glow != null && fillW > 0f) drawProgressGlow(glow, fillW, cy, th)
+        drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size(fillW, th), CornerRadius(th / 2))
     }
 }
 

@@ -39,6 +39,12 @@ data class IslandSettings(
     // Parıltı
     val glowEnabled: Boolean = true,
     val glowIntensity: Float = 0.6f,
+    // İlerleme çubuğu parıltısı (genişletilmiş müzik paneli)
+    val progressGlowEnabled: Boolean = true,
+    val progressGlowArtColor: Boolean = true,     // renk albüm kapağından alınsın (kapak yoksa progressGlowColorArgb)
+    val progressGlowColorArgb: Int = 0xFF0A84FF.toInt(),
+    val progressGlowIntensity: Float = 0.7f,
+    val progressGlowTipOnly: Boolean = false,     // false: çubuğun tamamında, true: yalnızca ucunda
     // Çerçeve
     val borderEnabled: Boolean = false,
     val borderColorArgb: Int = 0xFFFFFFFF.toInt(),
@@ -126,6 +132,8 @@ class SettingsRepository(context: Context) {
         val ART_BG = booleanPreferencesKey("art_bg"); val ART_BG_C = booleanPreferencesKey("art_bg_c")
         val GLASS = booleanPreferencesKey("glass"); val ALPHA = floatPreferencesKey("alpha"); val BLUR = intPreferencesKey("blur")
         val GLOW = booleanPreferencesKey("glow"); val GLOW_I = floatPreferencesKey("glowI")
+        val PG_ON = booleanPreferencesKey("pg_on"); val PG_ART = booleanPreferencesKey("pg_art")
+        val PG_COLOR = intPreferencesKey("pg_color"); val PG_I = floatPreferencesKey("pg_i"); val PG_TIP = booleanPreferencesKey("pg_tip")
         val BORDER = booleanPreferencesKey("border"); val BORDER_C = intPreferencesKey("borderC"); val BORDER_W = floatPreferencesKey("borderW")
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
@@ -162,6 +170,11 @@ class SettingsRepository(context: Context) {
             blurRadiusPx = p[K.BLUR] ?: d.blurRadiusPx,
             glowEnabled = p[K.GLOW] ?: d.glowEnabled,
             glowIntensity = p[K.GLOW_I] ?: d.glowIntensity,
+            progressGlowEnabled = p[K.PG_ON] ?: d.progressGlowEnabled,
+            progressGlowArtColor = p[K.PG_ART] ?: d.progressGlowArtColor,
+            progressGlowColorArgb = p[K.PG_COLOR] ?: d.progressGlowColorArgb,
+            progressGlowIntensity = p[K.PG_I] ?: d.progressGlowIntensity,
+            progressGlowTipOnly = p[K.PG_TIP] ?: d.progressGlowTipOnly,
             borderEnabled = p[K.BORDER] ?: d.borderEnabled,
             borderColorArgb = p[K.BORDER_C] ?: d.borderColorArgb,
             borderWidthDp = p[K.BORDER_W] ?: d.borderWidthDp,
@@ -203,6 +216,8 @@ class SettingsRepository(context: Context) {
             it[K.ART_BG] = s.artBgEnabled; it[K.ART_BG_C] = s.artBgCompact
             it[K.GLASS] = s.glassEnabled; it[K.ALPHA] = s.glassAlpha; it[K.BLUR] = s.blurRadiusPx
             it[K.GLOW] = s.glowEnabled; it[K.GLOW_I] = s.glowIntensity
+            it[K.PG_ON] = s.progressGlowEnabled; it[K.PG_ART] = s.progressGlowArtColor
+            it[K.PG_COLOR] = s.progressGlowColorArgb; it[K.PG_I] = s.progressGlowIntensity; it[K.PG_TIP] = s.progressGlowTipOnly
             it[K.BORDER] = s.borderEnabled; it[K.BORDER_C] = s.borderColorArgb; it[K.BORDER_W] = s.borderWidthDp
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
