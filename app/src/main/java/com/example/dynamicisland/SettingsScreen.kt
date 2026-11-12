@@ -118,6 +118,15 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 key(version) { ColorPicker(draft.accentArgb) { draft = draft.copy(accentArgb = it) } }
             }
 
+            SectionCard("Albüm arka planı", "Müzik çalarken adanın içi kapak görseliyle dolar") {
+                SwitchRow("Albüm kapağı arka planı", "Kapak bulanık ve hafif karartılmış olarak adanın içine yayılır",
+                    draft.artBgEnabled) { draft = draft.copy(artBgEnabled = it) }
+                if (draft.artBgEnabled) {
+                    SwitchRow("Kapalı adada da göster", "Kapatırsan arka plan yalnızca açılmış adada görünür",
+                        draft.artBgCompact) { draft = draft.copy(artBgCompact = it) }
+                }
+            }
+
             SectionCard("Liquid Glass", "Kapalıyken ada düz, opak siyahtır") {
                 SwitchRow("Cam efekti", null, draft.glassEnabled) { draft = draft.copy(glassEnabled = it) }
                 if (draft.glassEnabled) {
