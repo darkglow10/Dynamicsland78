@@ -512,14 +512,33 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // ---------------------------------------------------------------- Temizlik
     // ---------------------------------------------------------------- Adanın dışındaki şarkı sözleri
     /** Ayrı, dokunmatik olmayan bir overlay penceresi: sözler adayı açmadan da görünür. */
+    private val outsideOrigin = kotlinx.coroutines.flow.MutableStateFlow(LyricOrigin())
+
     private fun syncOutside(s: IslandSettings) {
         if (!(s.lyricsEnabled && s.lyricsOutside)) { detachOutside(); return }
         val pad = dp(24f)
         val fs = resources.configuration.fontScale
         val w = dp(s.lyricsOutsideWidthDp) + 2 * pad
-        val h = dp(s.lyricsOutsideSizeSp * fs * 1.3f * s.lyricsOutsideLines) + 2 * pad
+        val contentH = dp(s.lyricsOutsideSizeSp * fs * 1.3f * s.lyricsOutsideLines)
         val x = dp(s.lyricsOutsideXDp)
-        val y = dp(s.lyricsOutsideYDp) - pad
+        var y = dp(s.lyricsOutsideYDp) - pad
+        var h = contentH + 2 * pad
+
+        // "Adadan çıkış" animasyonları: sözler adadan başlayıp yerine gelir. Pencere adaya kadar yukarı uzatılır
+        // (aksi halde pencere sınırında kesilirdi); söz alanı altta ve eski konumunda kalır.
+        val islandCy = cutCenterYPx + dp(s.offsetYDp)
+        val textCy = dp(s.lyricsOutsideYDp) + contentH / 2
+        if (s.lyricsFromIsland()) {
+            val wantTop = (islandCy - dp(10f)).coerceAtLeast(0)
+            val extra = (y - wantTop).coerceAtLeast(0)
+            y -= extra; h += extra
+            outsideOrigin.value = LyricOrigin(
+                dx = (cutCenterXOffsetPx + dp(s.offsetXDp) - x).toFloat(),
+                dy = (islandCy - textCy).toFloat(),
+            )
+        } else {
+            outsideOrigin.value = LyricOrigin()
+        }
 
         val existing = outsideView
         val lp = outsideLp
@@ -534,7 +553,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent { OutsideLyricsRoot(ui, settings, lyrics, mediaState) }
+            setContent { OutsideLyricsRoot(ui, settings, lyrics, mediaState, outsideOrigin) }
         }
         val params = WindowManager.LayoutParams(
             w, h,
