@@ -29,9 +29,9 @@ import android.graphics.RenderEffect as AndroidRenderEffect
 private val LiquidMaxRadius = 36.dp
 
 /**
- * Düzeltilmiş AGSL Shader:
- * Keskin sign(p) sıçramaları kaldırıldı, merkez korunarak yalnızca dış kenarlarda 
- * pürüzsüz mercek bükülmesi ve renk ayrışması (dispersion) sağlandı.
+ * Gelişmiş AGSL Shader:
+ * Bevel ve bend değerleri adanın anlık boyutuna (compact veya expanded) göre 
+ * dinamik ölçeklenir, böylece her iki durumda da cam kırılması mükemmel görünür.
  */
 private val LIQUID_AGSL = """
 uniform shader content;
@@ -46,13 +46,12 @@ half4 main(float2 fragCoord) {
     float2 p = fragCoord - hs;
     float2 q = abs(p) - (hs - float2(radius));
     float dist = length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
-    float depth = -dist; // Kenara olan mesafe (0 = dış sınır, pozitif = iç kısım)
+    float depth = -dist; // Kenara olan mesafe
     
-    // Yalnızca kenara yakın dar bir bantta (bevel) kırılma uygula, merkezi koru
+    // Kenara yakın bantta pürüzsüz mercek bükülmesi
     float t = clamp(depth / bevel, 0.0, 1.0);
-    t = 1.0 - (t * t * (3.0 - 2.0 * t)); // Pürüzsüz lens geçiş eğrisi
+    t = 1.0 - (t * t * (3.0 - 2.0 * t));
 
-    // Merkezde sıçrama yaratmayan pürüzsüz yön vektörü
     float2 dir = length(p) > 0.001 ? p / length(p) : float2(0.0);
 
     float2 off = dir * bend * t;
@@ -81,10 +80,13 @@ fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
             val r = min(LiquidMaxRadius.toPx(), h / 2f)
             shader.setFloatUniform("size", w, h)
             shader.setFloatUniform("radius", r)
-            // Bevel daraltıldı (en fazla 5dp veya yüksekliğin dörtte biri), merkez bozulmaz
-            shader.setFloatUniform("bevel", min(5.dp.toPx(), h * 0.25f))
-            shader.setFloatUniform("bend", refraction.coerceIn(0f, 1.5f) * 4.dp.toPx())
+            
+            // DİNAMİK ÖLÇEKLEME: Bevel ve bend, adanın o anki boyutuna (küçük veya büyük) oranlıdır.
+            val minDim = min(w, h)
+            shader.setFloatUniform("bevel", minDim * 0.22f)
+            shader.setFloatUniform("bend", refraction.coerceIn(0f, 1.5f) * (minDim * 0.035f))
             shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.4f)
+            
             renderEffect = AndroidRenderEffect
                 .createRuntimeShaderEffect(shader, "content")
                 .asComposeRenderEffect()
