@@ -34,11 +34,11 @@ class IslandNotificationListener : NotificationListenerService() {
     private var artColor: Int = 0
 
     private val controllerCallback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) = publishMedia()
-        override fun onPlaybackStateChanged(state: PlaybackState?) = publishMedia()
-        override fun onSessionDestroyed() { bind(null) }
+        override fun onMetadataChanged(metadata: MediaMetadata?) { runCatching { publishMedia() } }
+        override fun onPlaybackStateChanged(state: PlaybackState?) { runCatching { publishMedia() } }
+        override fun onSessionDestroyed() { runCatching { bind(null) } }
     }
-    private val sessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { bind(it) }
+    private val sessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { runCatching { bind(it) } }
 
     companion object {
         @Volatile private var instance: IslandNotificationListener? = null
@@ -68,8 +68,10 @@ class IslandNotificationListener : NotificationListenerService() {
             sc.launch { IslandBus.commands.collect(::handleCommand) }
         }
         val cn = ComponentName(this, IslandNotificationListener::class.java)
-        msm.addOnActiveSessionsChangedListener(sessionsListener, cn)
-        bind(msm.getActiveSessions(cn))
+        // Bu çağrılar SecurityException fırlatabilir; yakalanmazsa süreç çöker ve erişilebilirlik servisi de "hatalı" olur
+        runCatching { msm.removeOnActiveSessionsChangedListener(sessionsListener) }
+        runCatching { msm.addOnActiveSessionsChangedListener(sessionsListener, cn) }
+        runCatching { bind(msm.getActiveSessions(cn)) }
     }
 
     override fun onListenerDisconnected() = release()
@@ -213,6 +215,10 @@ class IslandNotificationListener : NotificationListenerService() {
 
     // ---------------------------------------------------------------- Bildirimler
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        runCatching { handleNotification(sbn) }
+    }
+
+    private fun handleNotification(sbn: StatusBarNotification) {
         val n = sbn.notification
         if (sbn.packageName == packageName || sbn.isOngoing ||
             n.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
