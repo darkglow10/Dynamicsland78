@@ -98,14 +98,25 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         density = resources.displayMetrics.density
         settings = SettingsRepository(applicationContext).flow
             .stateIn(scope, SharingStarted.Eagerly, IslandSettings())
-        startAsForeground()
-        detectCutout()
-        attachOverlay()
+        // Arka plandan (örn. sistem START_STICKY ile yeniden başlatınca) foreground'a geçiş reddedilebilir;
+        // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
+        if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
+        runCatching { detectCutout() }
+        safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
-        IslandAccessibilityService.onChanged = { reattach() }
+        IslandAccessibilityService.onChanged = { runCatching { reattach() } }
         scope.launch { IslandBus.events.collect(::handle) }
         // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
         IslandNotificationListener.republish(this)
+        // Bildirim dinleyicisi sistem tarafından yeniden bağlanırken zaman alabilir (özellikle uzun süre sonra):
+        // müzik gelene kadar birkaç kez tekrar iste.
+        scope.launch {
+            for (wait in longArrayOf(1_500, 3_000, 6_000, 12_000)) {
+                delay(wait)
+                if (lastMedia != null) break
+                IslandNotificationListener.republish(this@IslandOverlayService)
+            }
+        }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
         scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s) } }
         scope.launch { lyrics.collect { update { it } } }
@@ -274,9 +285,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         buildOverlay(this, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
     }
 
+    /** attachOverlay'i hiçbir hata dışarı sızmayacak şekilde çağırır. */
+    private fun safeAttachOverlay() {
+        runCatching { attachOverlay() }.onFailure {
+            runCatching { detachOverlay() }
+            runCatching { buildOverlay(this, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY) }
+        }
+    }
+
     private fun reattach() {
-        detachOverlay()
-        attachOverlay()
+        runCatching { detachOverlay() }
+        safeAttachOverlay()
         scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
     }
 
