@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +34,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,6 +44,17 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { AppRoot() }
             }
         }
+    }
+}
+
+/** Uygulamayı (ayarlar sayfasının üstüne) öne getirir. */
+private fun bringAppToFront(ctx: Context) {
+    runCatching {
+        ctx.startActivity(
+            Intent(ctx, MainActivity::class.java).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            )
+        )
     }
 }
 
@@ -87,9 +100,28 @@ private fun SetupScreen() {
     var a11y by remember { mutableStateOf(ctx.hasAccessibility()) }
     var postNotif by remember { mutableStateOf(ctx.hasPostNotif()) }
 
+    // Ayarlar sayfasına gönderdiğimiz izin: verilir verilmez uygulamayı öne getiririz
+    var waiting by remember { mutableStateOf<String?>(null) }
+
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         overlay = ctx.hasOverlay(); listener = ctx.hasListener()
         a11y = ctx.hasAccessibility(); postNotif = ctx.hasPostNotif()
+        waiting = null                       // kullanıcı zaten geri döndü
+    }
+
+    LaunchedEffect(waiting) {
+        val w = waiting ?: return@LaunchedEffect
+        val end = SystemClock.elapsedRealtime() + 180_000L
+        while (SystemClock.elapsedRealtime() < end) {
+            delay(400)
+            val granted = when (w) {
+                "overlay" -> ctx.hasOverlay()
+                "listener" -> ctx.hasListener()
+                else -> ctx.hasAccessibility()
+            }
+            if (granted) { bringAppToFront(ctx); break }
+        }
+        waiting = null
     }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { postNotif = it }
 
@@ -111,10 +143,12 @@ private fun SetupScreen() {
 
             SectionCard("İzinler", "Her izin Ayarlar'da tek dokunuşla verilir") {
                 PermRow("Üstte gösterme", "Adayı diğer uygulamaların üzerinde çizer", overlay, true) {
+                    waiting = "overlay"
                     ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")))
                 }
                 SectionDivider()
                 PermRow("Bildirim erişimi", "Bildirimleri ve müzik oturumunu okur", listener, true) {
+                    waiting = "listener"
                     ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
                 SectionDivider()
@@ -123,6 +157,7 @@ private fun SetupScreen() {
                 }
                 SectionDivider()
                 PermRow("Erişilebilirlik", "Adaya dokunabilmek için gerekli", a11y, true) {
+                    waiting = "a11y"
                     ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                 }
             }
