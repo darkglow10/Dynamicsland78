@@ -31,6 +31,8 @@ class IslandNotificationListener : NotificationListenerService() {
     // Albüm kapağı önbelleği: aynı parça için tekrar tekrar ölçeklenmez
     private var artKey: String? = null
     private var art: ImageBitmap? = null
+    private val ART_MAX = 512        // kapak bu boyuta kadar tam çözünürlükte tutulur (eskiden 160: pikselliydi)
+    private val SHARP_MIN = 300      // bundan küçük bitmap yeterince net sayılmaz, URI varsa o yüklenir
     private var artColor: Int = 0
 
     private val controllerCallback = object : MediaController.Callback() {
@@ -138,26 +140,37 @@ class IslandNotificationListener : NotificationListenerService() {
 
     // ---------------------------------------------------------------- Albüm kapağı
     private fun resolveArt(md: MediaMetadata): ImageBitmap? {
-        // 1) Doğrudan bitmap veren uygulamalar (Spotify, YouTube Music vb.)
-        val bmp = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
-            ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART)
-            ?: md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-        if (bmp != null) {
+        // 1) Doğrudan bitmap veren uygulamalar (Spotify, YouTube Music vb.): üçünden EN BÜYÜĞÜNÜ seç
+        //    (DISPLAY_ICON çoğu zaman küçük bir önizlemedir, önceki sürüm onu da kullanıyordu).
+        val bmp = listOfNotNull(
+            md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART),
+            md.getBitmap(MediaMetadata.METADATA_KEY_ART),
+            md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON),
+        ).maxByOrNull { it.width * it.height }
+        val uri = md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+            ?: md.getString(MediaMetadata.METADATA_KEY_ART_URI)
+            ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+        val bmpIsSharp = bmp != null && maxOf(bmp.width, bmp.height) >= SHARP_MIN
+        if (bmp != null && (bmpIsSharp || uri == null)) {
             val key = "b${System.identityHashCode(bmp)}"
             if (key != artKey) {
                 artKey = key
-                val small = bmp.scaledMax(160)
+                val small = bmp.scaledMax(ART_MAX)
                 art = small.asImageBitmap()
                 artColor = dominantColor(small)
             }
             return art
         }
-        // 2) Sadece URI veren uygulamalar: arka planda yükle, gelince yeniden yayınla
-        val uri = md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
-            ?: md.getString(MediaMetadata.METADATA_KEY_ART_URI)
-            ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI)
+        // 2) URI veren uygulamalar (ya da bitmap'i küçük olanlar): daha büyük kapağı arka planda yükle,
+        //    gelene kadar eldeki küçük bitmap'i göster
         if (uri != null) {
-            if (uri != artKey) { artKey = uri; art = null; artColor = 0; loadArtAsync(uri) }
+            if (uri != artKey) {
+                artKey = uri
+                val placeholder = bmp?.scaledMax(ART_MAX)
+                art = placeholder?.asImageBitmap()
+                artColor = placeholder?.let { dominantColor(it) } ?: 0
+                loadArtAsync(uri)
+            }
             return art
         }
         artKey = null; art = null; artColor = 0
@@ -175,13 +188,24 @@ class IslandNotificationListener : NotificationListenerService() {
         }
     }
 
+    /** content / file / resource / http(s) adreslerinden kapağı okur; ART_MAX piksele kadar tam çözünürlükte tutar. */
     private fun decodeUri(uri: String): Bitmap? = runCatching {
         val u = Uri.parse(uri)
-        if (u.scheme == "content" || u.scheme == "file" || u.scheme == "android.resource") {
-            contentResolver.openInputStream(u)?.use {
-                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = 2 })
-            }?.scaledMax(160)
-        } else null
+        val bytes: ByteArray? = when (u.scheme) {
+            "content", "file", "android.resource" -> contentResolver.openInputStream(u)?.use { it.readBytes() }
+            "http", "https" -> java.net.URL(uri).openConnection().apply {
+                connectTimeout = 5_000; readTimeout = 5_000
+            }.getInputStream().use { it.readBytes() }
+            else -> null
+        }
+        if (bytes == null || bytes.size > 12_000_000) return@runCatching null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        // Sonuç en az ART_MAX piksel kalacak şekilde yalnızca gerektiği kadar küçült
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= ART_MAX) sample *= 2
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?.scaledMax(ART_MAX)
     }.getOrNull()
 
     /** Kapaktaki en baskın CANLI rengi bulur (ton kovalarına doygunluk x parlaklık ağırlığıyla oy verilir). 0 = bulunamadı. */

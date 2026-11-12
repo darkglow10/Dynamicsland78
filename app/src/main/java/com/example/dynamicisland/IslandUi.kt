@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -369,6 +370,7 @@ fun IslandPill(
                 content.art?.let { art ->
                     Image(
                         bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
+                        filterQuality = FilterQuality.High,
                         modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
                             .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
                     )
@@ -394,22 +396,20 @@ fun IslandPill(
     }
 }
 
-/** Kapağı çok küçük bir bitmap'e indirip büyüterek yumuşak bir zemin üretir (bulanıklık efekti, GPU yükü yok). */
+/** Kapağı ada içine net (bulanıklaştırılmamış) çizer; yazılar okunsun diye üstüne koyu katman biner. */
 @Composable
 private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: IslandProgress) {
-    val soft = remember(art) {
-        runCatching {
-            android.graphics.Bitmap.createScaledBitmap(art.asAndroidBitmap(), 24, 24, true).asImageBitmap()
-        }.getOrDefault(art)
-    }
     Box(
         Modifier.fillMaxSize().graphicsLayer {
             // Kapalı adada kapalıysa: ada açılırken belirir, küçülürken solar
             alpha = if (showInCompact) 1f else ((progress.mean - 0.25f) / 0.6f).coerceIn(0f, 1f)
         }
     ) {
-        Image(bitmap = soft, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.40f)))
+        Image(
+            bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
+            filterQuality = FilterQuality.High, modifier = Modifier.fillMaxSize(),
+        )
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.50f)))
     }
 }
 
