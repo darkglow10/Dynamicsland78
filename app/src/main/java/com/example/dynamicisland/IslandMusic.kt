@@ -87,13 +87,13 @@ private fun MarqueeText(text: String, modifier: Modifier, color: Color, fontSize
 
 // ---------------------------------------------------------------- Equalizer (sağ kenar)
 @Composable
-fun Equalizer(color: Color, height: Dp = 14.dp, barWidth: Dp = 3.dp, animate: Boolean = true) {
+fun Equalizer(color: Color, height: Dp = 14.dp, barWidth: Dp = 3.dp, animate: Boolean = true, rainbow: RainbowStyle? = null) {
     val t = rememberInfiniteTransition(label = "eq")
     val durations = intArrayOf(380, 520, 300, 460, 410)
     val bars = durations.map { d ->
         t.animateFloat(0.25f, 1f, infiniteRepeatable(tween(d, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bar$d")
     }
-    Row(Modifier.height(height), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.height(height).rainbowFill(rainbow, 0.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
         bars.forEach { s ->
             Box(
                 Modifier.width(barWidth).fillMaxHeight()
@@ -131,6 +131,7 @@ fun MusicPanel(
     onOutput: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val rb = rememberRainbowStyle(cfg)
     val favKey = remember(m.title, m.artist) { "${m.title}|${m.artist}" }
     var fav by remember(favKey) { mutableStateOf(FavoriteStore.isFav(ctx, favKey)) }
     var lastTap by remember { mutableLongStateOf(0L) }
@@ -160,24 +161,24 @@ fun MusicPanel(
             Box(Modifier.weight(1f).height(60.dp)) {
                 MarqueeText(
                     m.title.ifBlank { "Bilinmeyen parça" },
-                    Modifier.align(Alignment.CenterStart).fillMaxWidth(),
+                    Modifier.align(Alignment.CenterStart).fillMaxWidth().rainbowFill(rb),
                     color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold,
                 )
                 Text(
                     m.artist, color = Color.White.copy(alpha = 0.62f), fontSize = 14.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().offset(y = 3.dp),
+                    modifier = Modifier.align(Alignment.BottomStart).fillMaxWidth().offset(y = 3.dp).rainbowFill(rb),
                 )
             }
-            Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing)
+            Equalizer(accent, height = 26.dp, barWidth = 4.dp, animate = m.playing, rainbow = rb)
         }
 
         if (cfg.lyricsEnabled && cfg.lyricsInPanel) PanelLyrics(cfg, lyrics, frame, artColor = m.artColor)
 
-        MusicProgress(m, cfg) { onCommand(MediaCommand.SeekTo(it)) }
+        MusicProgress(m, cfg, rb) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp), heartColor) {
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp), heartColor, rb) {
                 val want = !fav
                 fav = want; lastTap = SystemClock.elapsedRealtime()
                 FavoriteStore.set(ctx, favKey, want)
@@ -187,11 +188,11 @@ fun MusicPanel(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                CtlButton(Ctl.Rew, 24.dp) { onCommand(MediaCommand.Previous) }
-                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp) { onCommand(MediaCommand.PlayPause) }
-                CtlButton(Ctl.Fwd, 24.dp) { onCommand(MediaCommand.Next) }
+                CtlButton(Ctl.Rew, 24.dp, rb = rb) { onCommand(MediaCommand.Previous) }
+                CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp, rb = rb) { onCommand(MediaCommand.PlayPause) }
+                CtlButton(Ctl.Fwd, 24.dp, rb = rb) { onCommand(MediaCommand.Next) }
             }
-            CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp)) { onOutput() }
+            CtlButton(Ctl.Cast, 25.dp, Modifier.offset(x = 5.dp), rb = rb) { onOutput() }
         }
     }
 }
@@ -215,7 +216,7 @@ private fun fmt(ms: Long): String {
 }
 
 @Composable
-private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, onSeek: (Long) -> Unit) {
+private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, rb: RainbowStyle?, onSeek: (Long) -> Unit) {
     // Parıltı rengi: kapaktan (açıksa ve kapak varsa), yoksa ayarlardaki renk
     val baseGlow = if (cfg.progressGlowArtColor && m.artColor != 0) glowTone(Color(m.artColor)) else Color(cfg.progressGlowColorArgb)
     val glowColor by animateColorAsState(baseGlow, tween(450), label = "progressGlowColor")
@@ -237,14 +238,14 @@ private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, onSeek: (
     val gray = Color.White.copy(alpha = 0.55f)
 
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(fmt(shownMs), color = gray, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.widthIn(min = 32.dp))
+        Text(fmt(shownMs), color = gray, fontSize = 11.5.sp, fontWeight = FontWeight.Medium, modifier = Modifier.widthIn(min = 32.dp).rainbowFill(rb))
         Box(Modifier.weight(1f)) {
-            SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null, glow) { f, commit ->
+            SeekBar(frac.coerceIn(0f, 1f), dur > 0, d != null, glow, rb) { f, commit ->
                 if (commit) { drag = null; onSeek((f * dur).toLong()) } else drag = f
             }
         }
         Text(if (dur > 0) "-" + fmt((dur - shownMs).coerceAtLeast(0L)) else "", color = gray, fontSize = 11.5.sp,
-            fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 36.dp))
+            fontWeight = FontWeight.Medium, textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 36.dp).rainbowFill(rb))
     }
 }
 
@@ -307,12 +308,12 @@ private fun DrawScope.drawInnerGlow(g: ProgressGlow, fillW: Float, cy: Float, th
 }
 
 @Composable
-private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, glow: ProgressGlow?, onChange: (Float, Boolean) -> Unit) {
+private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, glow: ProgressGlow?, rb: RainbowStyle?, onChange: (Float, Boolean) -> Unit) {
     var w by remember { mutableIntStateOf(1) }
     val thick by animateFloatAsState(if (dragging) 8f else 5f, spring(stiffness = Spring.StiffnessMedium), label = "seekThick")
     val cb by rememberUpdatedState(onChange)
     Canvas(
-        Modifier.fillMaxWidth().height(24.dp)
+        Modifier.fillMaxWidth().height(24.dp).rainbowFill(rb)
             .onSizeChanged { w = it.width.coerceAtLeast(1) }
             .pointerInput(enabled) {
                 if (!enabled) return@pointerInput
@@ -370,7 +371,7 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), rb: RainbowStyle? = null, onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
@@ -379,7 +380,7 @@ private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartC
             .clickable(interactionSource = src, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(size)) {
+        Canvas(Modifier.size(size).rainbowFill(rb, 48.dp)) {
             val s = this.size.width
             fun tri(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
                 val p = Path().apply { moveTo(x1 * s, y1 * s); lineTo(x2 * s, y2 * s); lineTo(x3 * s, y3 * s); close() }
