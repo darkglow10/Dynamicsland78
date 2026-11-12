@@ -146,6 +146,10 @@ fun MusicPanel(
         }
     }
 
+    // Beğenilmiş kalbin rengi: kapaktan (açıksa ve kapak varsa), yoksa ayarlardaki renk
+    val baseHeart = if (cfg.likeArtColor && m.artColor != 0) glowTone(Color(m.artColor)) else Color(cfg.likeColorArgb)
+    val heartColor by animateColorAsState(baseHeart, tween(450), label = "heartColor")
+
     Column(
         Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -173,7 +177,7 @@ fun MusicPanel(
         MusicProgress(m, cfg) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp)) {
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp), heartColor) {
                 val want = !fav
                 fav = want; lastTap = SystemClock.elapsedRealtime()
                 FavoriteStore.set(ctx, favKey, want)
@@ -366,7 +370,7 @@ private fun DrawScope.cast(s: Float, color: Color) {
 }
 
 @Composable
-private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, heartColor: Color = Color(0xFFFF2D6F), onClick: () -> Unit) {
     val src = remember { MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
     val sc by animateFloatAsState(if (pressed) 0.84f else 1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMedium), label = "press")
@@ -390,7 +394,7 @@ private fun CtlButton(kind: Ctl, size: Dp, modifier: Modifier = Modifier, onClic
                 Ctl.Rew -> { tri(0.50f, 0.20f, 0.50f, 0.80f, 0.04f, 0.50f); tri(0.96f, 0.20f, 0.96f, 0.80f, 0.50f, 0.50f) }
                 Ctl.Fwd -> { tri(0.04f, 0.20f, 0.04f, 0.80f, 0.50f, 0.50f); tri(0.50f, 0.20f, 0.50f, 0.80f, 0.96f, 0.50f) }
                 Ctl.Heart -> heart(s, false, Color.White.copy(alpha = 0.75f))
-                Ctl.HeartOn -> heart(s, true, Color(0xFFFF2D6F))
+                Ctl.HeartOn -> heart(s, true, heartColor)
                 Ctl.Cast -> cast(s, Color.White.copy(alpha = 0.75f))
             }
         }

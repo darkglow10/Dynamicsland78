@@ -174,6 +174,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
+            SectionCard("Beğeni düğmesi", "Açık adadaki kalp, beğenildiğinde bu renkte olur") {
+                SwitchRow("Albüm kapağı rengi", "Kalp, çalan şarkının kapağıyla aynı renkte olur",
+                    draft.likeArtColor) { draft = draft.copy(likeArtColor = it) }
+                SubHeader(if (draft.likeArtColor) "Kapak yoksa kullanılacak renk" else "Kalp rengi")
+                key(version) { ColorPicker(draft.likeColorArgb) { draft = draft.copy(likeColorArgb = it) } }
+            }
+
             SectionCard("Çerçeve", "Albüm renginden bağımsız, istediğin renk") {
                 SwitchRow("Çerçeve çizgisi", null, draft.borderEnabled) { draft = draft.copy(borderEnabled = it) }
                 if (draft.borderEnabled) {
