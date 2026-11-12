@@ -40,7 +40,29 @@ class IslandNotificationListener : NotificationListenerService() {
     }
     private val sessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { bind(it) }
 
+    companion object {
+        @Volatile private var instance: IslandNotificationListener? = null
+
+        /**
+         * Ada servisi (yeniden) başlayınca çağrılır: o an çalan müziği tekrar yayınlar.
+         * Dinleyici hiç bağlı değilse sistemden yeniden bağlanmasını ister.
+         */
+        fun republish(ctx: android.content.Context) {
+            val i = instance
+            if (i != null) {
+                i.lastPublished = null
+                runCatching { i.bind(i.msm.getActiveSessions(ComponentName(i, IslandNotificationListener::class.java))) }
+                    .onFailure { i.publishMedia() }
+            } else {
+                runCatching {
+                    NotificationListenerService.requestRebind(ComponentName(ctx, IslandNotificationListener::class.java))
+                }
+            }
+        }
+    }
+
     override fun onListenerConnected() {
+        instance = this
         scope?.cancel()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).also { sc ->
             sc.launch { IslandBus.commands.collect(::handleCommand) }
@@ -54,6 +76,7 @@ class IslandNotificationListener : NotificationListenerService() {
     override fun onDestroy() { release(); super.onDestroy() }
 
     private fun release() {
+        if (instance === this) instance = null
         scope?.cancel(); scope = null
         runCatching { msm.removeOnActiveSessionsChangedListener(sessionsListener) }
         controller?.unregisterCallback(controllerCallback)
