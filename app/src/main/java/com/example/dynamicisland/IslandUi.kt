@@ -38,7 +38,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -300,7 +299,8 @@ private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>): Mod
             // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
             val w = cfg.borderWidthDp.dp.toPx() * 2f
             val brush = rainbowBrush(rbBorder.phase.value, size.width, rbBorder.alpha)
-            drawOutline(PillShape.createOutline(size, layoutDirection, this), brush, style = Stroke(width = w))
+            val r = minOf(36.dp.toPx(), size.height / 2f)
+            drawRoundRect(brush, cornerRadius = CornerRadius(r, r), style = Stroke(width = w))
         }
     }
     // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
