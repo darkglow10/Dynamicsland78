@@ -23,12 +23,12 @@ class IslandAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
-        onChanged?.invoke()
+        notifyChanged()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
-        onChanged?.invoke()
+        notifyChanged()
         return super.onUnbind(intent)
     }
 
@@ -37,12 +37,23 @@ class IslandAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /**
+     * Overlay servisinin geri çağrısında oluşan HİÇBİR hata buraya sızmamalı: erişilebilirlik servisi ile
+     * overlay servisi aynı süreçte çalışır; yakalanmayan tek bir istisna süreci çökertir ve sistem
+     * erişilebilirlik servisini "Bu hizmet hatalı çalışıyor / Çalışmıyor" diye kalıcı işaretler.
+     */
+    private fun notifyChanged() {
+        runCatching { onChanged?.invoke() }
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.eventType != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
-        if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return
-        val text = event.text.joinToString(" ").trim()
-        if (text.isEmpty()) return
-        IslandBus.post(IslandEvent.Notification(event.packageName?.toString().orEmpty(), "", text))
+        runCatching {
+            if (event?.eventType != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
+            if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return
+            val text = event.text.joinToString(" ").trim()
+            if (text.isEmpty()) return
+            IslandBus.post(IslandEvent.Notification(event.packageName?.toString().orEmpty(), "", text))
+        }
     }
 
     override fun onInterrupt() = Unit
