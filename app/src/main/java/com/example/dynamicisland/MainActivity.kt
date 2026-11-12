@@ -90,6 +90,53 @@ private fun copyText(ctx: Context, label: String, text: String) {
 
 private const val ADB_GRANT = "adb shell pm grant com.example.dynamicisland android.permission.WRITE_SECURE_SETTINGS"
 
+/** Üreticiye özel "otomatik başlatma / arka planda çalışma" ekranları (paket to sınıf). Hangisi varsa o açılır. */
+private val AUTOSTART_TARGETS = listOf(
+    "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",             // Xiaomi / Redmi / POCO
+    "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",                    // Samsung
+    "com.samsung.android.sm_cn" to "com.samsung.android.sm.ui.battery.BatteryActivity",
+    "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",       // Oppo / Realme
+    "com.coloros.safecenter" to "com.coloros.safecenter.startupapp.StartupAppListActivity",
+    "com.oppo.safe" to "com.oppo.safe.permission.startup.StartupAppListActivity",
+    "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",       // Vivo / iQOO
+    "com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity",
+    "com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager",
+    "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",  // Huawei / Honor
+    "com.huawei.systemmanager" to "com.huawei.systemmanager.optimize.process.ProtectActivity",
+    "com.hihonor.systemmanager" to "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+    "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",         // OnePlus
+    "com.asus.mobilemanager" to "com.asus.mobilemanager.autostart.AutoStartActivity",                     // Asus
+    "com.transsion.phonemaster" to "com.cyin.himgr.autostart.AutoStartActivity",                          // Tecno / Infinix / itel
+    "com.evenwell.powersaving.g3" to "com.evenwell.powersaving.g3.exception.PowerSaverExceptionActivity", // Nokia / HMD
+)
+
+/**
+ * Arka planda otomatik başlatma / çalışma izni ekranını açar. Bu izin ayarı herkesin telefonunda farklı yerde olduğundan
+ * bilinen üretici ekranlarını sırayla dener; hiçbiri açılmazsa uygulama bilgisine götürür.
+ */
+private fun openAutostartSettings(ctx: Context) {
+    val candidates = buildList {
+        add(Intent("miui.intent.action.OP_AUTO_START").addCategory(Intent.CATEGORY_DEFAULT))
+        AUTOSTART_TARGETS.forEach { (pkg, cls) -> add(Intent().setComponent(ComponentName(pkg, cls))) }
+    }
+    for (i in candidates) {
+        val opened = runCatching { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
+        if (opened) {
+            Toast.makeText(ctx, "Dynamic Island için otomatik başlatmaya / arka planda çalışmaya izin ver", Toast.LENGTH_LONG).show()
+            return
+        }
+    }
+    Toast.makeText(
+        ctx, "Uygulama bilgisi → Pil / Arka plan / Otomatik başlatma bölümünden izin ver", Toast.LENGTH_LONG,
+    ).show()
+    runCatching {
+        ctx.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${ctx.packageName}"))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
 /**
  * Çökmüş erişilebilirlik servisini kapatıp açar (sistemin "hatalı çalışıyor" işaretini temizler).
  * Yalnızca WRITE_SECURE_SETTINGS izni adb ile bir kez verildiyse çalışır.
@@ -202,7 +249,7 @@ private fun SetupScreen() {
                 SectionCard("Erişilebilirlik servisi çalışmıyor", "Ayarlarda açık görünüyor ama sistem servisi durdurmuş") {
                     Text(
                         "Uygulama süreci kapandığında Android servisi \"hatalı\" diye işaretler ve kendiliğinden geri açmaz. " +
-                            "Sözlerin adadan çıkması ve adaya dokunma bu servise bağlı.",
+                            "Sözlerin adadan çıkması ve adaya dokunma bu servise bağlı. En sık neden: arka planda otomatik başlatma izninin kapalı olması.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp, lineHeight = 19.sp,
                     )
                     IslandActionButton(if (ctx.canHealA11y()) "Otomatik onar" else "Erişilebilirlik ayarını aç", {
@@ -214,6 +261,7 @@ private fun SetupScreen() {
                             }
                         }
                     })
+                    IslandActionButton("Otomatik başlatma iznini aç", { openAutostartSettings(ctx) })
                 }
             }
 
@@ -257,6 +305,12 @@ private fun SetupScreen() {
                         ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
                     }.onFailure { ctx.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
                 }
+                SectionDivider()
+                PermRow(
+                    "Arka planda otomatik başlatma",
+                    "Önemli: kapalıysa uygulamayı son uygulamalardan silince erişilebilirlik servisi durur. Açıp \"İzin ver\" yap",
+                    false, false, action = "Ayarı aç",
+                ) { openAutostartSettings(ctx) }
             }
 
             SectionCard("İpucu", "Sideload (APK) kurulumlarında") {
