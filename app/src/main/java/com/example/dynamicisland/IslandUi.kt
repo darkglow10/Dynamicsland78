@@ -30,6 +30,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -227,6 +230,12 @@ fun IslandPill(
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap),
         contentAlignment = Alignment.TopCenter,
     ) {
+        // Albüm kapağı arka planı: ada içini kaplar, yazıların okunması için hafif karartılır
+        val backdropArt = media?.art
+        if (cfg.artBgEnabled && backdropArt != null) {
+            ArtBackdrop(backdropArt, cfg.artBgCompact, progress)
+        }
+
         if (panelVisible) {
             Box(
                 Modifier
@@ -271,6 +280,25 @@ fun IslandPill(
 
             }
         }
+    }
+}
+
+/** Kapağı çok küçük bir bitmap'e indirip büyüterek yumuşak bir zemin üretir (bulanıklık efekti, GPU yükü yok). */
+@Composable
+private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: IslandProgress) {
+    val soft = remember(art) {
+        runCatching {
+            android.graphics.Bitmap.createScaledBitmap(art.asAndroidBitmap(), 24, 24, true).asImageBitmap()
+        }.getOrDefault(art)
+    }
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            // Kapalı adada kapalıysa: ada açılırken belirir, küçülürken solar
+            alpha = if (showInCompact) 1f else ((progress.mean - 0.25f) / 0.6f).coerceIn(0f, 1f)
+        }
+    ) {
+        Image(bitmap = soft, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.40f)))
     }
 }
 
