@@ -6,6 +6,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -88,8 +89,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     // Galeriden fotoğraf seçici (hangi alan için seçildiği ekran döndürülse de korunur)
     val scope = rememberCoroutineScope()
     var pendingSlot by rememberSaveable { mutableStateOf(-1) }
-    // Fotoğraf kopyalanmaz: yalnızca adresi ve kalıcı okuma izni alınır
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    // Fotoğraf kopyalanmaz: sistemin fotoğraf seçicisi (galeri / Google Fotoğraflar) kullanılır; yalnızca adres ve kalıcı okuma izni alınır
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         val slot = CustomImages.Slot.values().getOrNull(pendingSlot)
         pendingSlot = -1
         if (uri != null && slot != null) scope.launch {
@@ -104,7 +105,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
         }
     }
-    val pick: (CustomImages.Slot) -> Unit = { slot -> pendingSlot = slot.ordinal; picker.launch(arrayOf("image/*")) }
+    val pick: (CustomImages.Slot) -> Unit = { slot -> pendingSlot = slot.ordinal; picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
     val remove: (CustomImages.Slot) -> Unit = { slot ->
         val old = draft.imageUri(slot)
         draft = draft.withImageUri(slot, "")
