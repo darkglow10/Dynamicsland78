@@ -79,6 +79,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var lyricsJob: Job? = null
     private var outsideView: ComposeView? = null
     private var outsideLp: WindowManager.LayoutParams? = null
+    private var outsideWm: WindowManager? = null      // pencerenin eklendiği WindowManager (erişilebilirlik ya da servis)
+    private var outsideDy = 0                         // sistemin pencereyi kaydırdığı miktar (kalibrasyon)
+    private var outsideTries = 0
+    private var outsideWantY = 0
 
     private var wantX = 0
     private var wantY = 0                 // adanın pencere üstünün olması gereken ekran Y'si
@@ -295,6 +299,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun reattach() {
         runCatching { detachOverlay() }
+        // Erişilebilirlik bağlantısı değişince dış söz penceresinin türü de değişir: yeniden kur.
+        // Önce söz penceresi, sonra ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
+        runCatching { detachOutside() }
+        runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
     }
@@ -540,12 +548,15 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             outsideOrigin.value = LyricOrigin()
         }
 
+        outsideWantY = y
         val existing = outsideView
         val lp = outsideLp
         if (existing != null && lp != null) {
-            if (lp.width != w || lp.height != h || lp.x != x || lp.y != y) {
-                lp.width = w; lp.height = h; lp.x = x; lp.y = y
-                runCatching { wm.updateViewLayout(existing, lp) }
+            val ey = y - outsideDy; val eh = h + outsideDy
+            if (lp.width != w || lp.height != eh || lp.x != x || lp.y != ey) {
+                lp.width = w; lp.height = eh; lp.x = x; lp.y = ey
+                runCatching { (outsideWm ?: wm).updateViewLayout(existing, lp) }
+                scheduleOutsideCalibrate()
             }
             return
         }
@@ -555,9 +566,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
             setContent { OutsideLyricsRoot(ui, settings, lyrics, mediaState, outsideOrigin) }
         }
-        val params = WindowManager.LayoutParams(
-            w, h,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+        fun params(type: Int) = WindowManager.LayoutParams(
+            w, h, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
@@ -568,22 +578,77 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             this.x = x; this.y = y
+            fitInsetsTypes = 0          // durum çubuğu payı kadar aşağı itilmesin
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
-        if (runCatching { wm.addView(view, params) }.isSuccess) {
-            outsideView = view; outsideLp = params
+
+        // Normal uygulama overlay'i durum çubuğunun ALTINDA kalır: sözler adaya (durum çubuğu hizası) hiç ulaşamazdı.
+        // Erişilebilirlik overlay'i ise adanın kendisi gibi durum çubuğunun üstünde çizilir.
+        var host: WindowManager = wm
+        var lp2 = params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+        var added = false
+        val a11y = IslandAccessibilityService.instance
+        if (a11y != null) {
+            runCatching {
+                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
+                val p2 = params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+                h2.addView(view, p2)
+                host = h2; lp2 = p2; added = true
+            }
+        }
+        if (!added) added = runCatching { wm.addView(view, lp2) }.isSuccess
+
+        if (added) {
+            outsideView = view; outsideLp = lp2; outsideWm = host
+            outsideDy = 0
+            scheduleOutsideCalibrate()
+            // Ada (varsa) en üstte kalsın: yeni eklenen söz penceresi adanın üstüne binmesin
+            if (composeView != null) bringIslandToFront()
         } else {
             view.disposeComposition()
         }
     }
 
+    /** Adayı söz penceresinden sonra yeniden ekler (ikisi de erişilebilirlik overlay'i ise sonradan eklenen üstte olur). */
+    private fun bringIslandToFront() {
+        runCatching { detachOverlay() }
+        safeAttachOverlay()
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
+    }
+
+    /** Sistem pencereyi istediğimizden farklı bir yere koyduysa (durum çubuğu payı vb.) farkı kadar geri çeker. */
+    private val outsideCalibrate = object : Runnable {
+        override fun run() {
+            val v = outsideView ?: return
+            val lp = outsideLp ?: return
+            val host = outsideWm ?: return
+            if (!v.isAttachedToWindow) return
+            val loc = IntArray(2)
+            v.getLocationOnScreen(loc)
+            val dy = loc[1] - outsideWantY
+            if (abs(dy) <= 2 || outsideTries >= 3) return
+            outsideTries++
+            outsideDy += dy
+            lp.y -= dy; lp.height += dy
+            runCatching { host.updateViewLayout(v, lp) }
+            v.postDelayed(this, 200)
+        }
+    }
+
+    private fun scheduleOutsideCalibrate() {
+        outsideTries = 0
+        outsideView?.let { it.removeCallbacks(outsideCalibrate); it.postDelayed(outsideCalibrate, 250) }
+    }
+
     private fun detachOutside() {
         val v = outsideView ?: return
-        runCatching { wm.removeView(v) }
+        v.removeCallbacks(outsideCalibrate)
+        runCatching { (outsideWm ?: wm).removeView(v) }
         v.disposeComposition()
         v.setViewTreeLifecycleOwner(null)
         v.setViewTreeSavedStateRegistryOwner(null)
-        outsideView = null; outsideLp = null
+        outsideView = null; outsideLp = null; outsideWm = null
+        outsideDy = 0
     }
 
     override fun onDestroy() {
