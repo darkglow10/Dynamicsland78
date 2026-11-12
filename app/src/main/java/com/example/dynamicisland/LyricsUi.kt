@@ -8,6 +8,7 @@ import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.SizeTransform
@@ -32,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -51,6 +54,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -147,7 +151,7 @@ private class LyricTiming(val enterMs: Int, val enterDelay: Int, val exitMs: Int
 
 private fun lyricTiming(style: Int, d: Int): LyricTiming = when (style) {
     6 -> LyricTiming(enterMs = d, enterDelay = 0, exitMs = d, easing = FastOutSlowInEasing)               // eski adaya girerken yeni çıkar
-    7 -> LyricTiming(enterMs = d, enterDelay = (d * 0.45f).toInt(), exitMs = (d * 0.45f).toInt(), easing = PopEasing) // önce eski kaybolur, sonra yeni çıkar
+    7 -> LyricTiming(enterMs = 1, enterDelay = 0, exitMs = (d * 0.5f).toInt(), easing = FastOutSlowInEasing)  // yalnızca eski satır adaya geri girer; yeni satırın kelimeleri tek tek çıkar
     9 -> LyricTiming(enterMs = d / 2, enterDelay = d / 2, exitMs = d / 2, easing = FastOutSlowInEasing)  // çevirme: önce eski döner, sonra yeni
     else -> LyricTiming(enterMs = d, enterDelay = 0, exitMs = (d * 0.6f).toInt(), easing = FastOutSlowInEasing)
 }
@@ -171,8 +175,8 @@ private fun AnimatedContentScope.LyricLayer(style: Int, d: Int, content: @Compos
             val x = exit.value
             when (style) {
                 6, 7 -> {
-                    // k: 0 = yerinde (tam boy), 1 = adanın içinde (küçük)
-                    val k = max(1f - e, x)
+                    // k: 0 = yerinde (tam boy), 1 = adanın içinde (küçük). 7'de giriş yok: kelimeler kendi çıkar.
+                    val k = if (style == 7) x else max(1f - e, x)
                     val sc = 0.12f + 0.88f * (1f - k)
                     scaleX = sc; scaleY = sc
                     translationX = origin.dx * k
@@ -269,6 +273,26 @@ fun LyricLineText(
     if (text.isBlank()) return
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    val origin = LocalLyricOrigin.current
+    // "Adadan tek tek": satır kelime kelime, şarkıda o kelimeye gelinince adadan çıkar
+    val wordMode = cfg.lyricsAnimEnabled && cfg.lyricsAnimStyle == 7
+    val words = remember(text, wordMode) { if (wordMode) wordRanges(text) else emptyList() }
+    val wordAnims = remember(words) { words.map { Animatable(0f) } }
+    if (wordMode) {
+        val ms = cfg.lyricsAnimMs.coerceIn(120, 900)
+        LaunchedEffect(words, ms) {
+            snapshotFlow {
+                val cur = frame.index.value
+                val f = if (cur == lineIndex) frame.fraction.value else if (cur < lineIndex) 0f else -1f   // geçmiş satırda yeni kelime çıkmaz
+                words.count { it.startFrac <= f + 0.0001f }
+            }.collect { n ->
+                for (i in 0 until n.coerceAtMost(wordAnims.size)) {
+                    val a = wordAnims[i]
+                    if (a.value == 0f && !a.isRunning) launch { a.animateTo(1f, tween(ms, easing = PopEasing)) }
+                }
+            }
+        }
+    }
     BoxWithConstraints(
         modifier,
         contentAlignment = if (align == TextAlign.Start) Alignment.CenterStart else Alignment.Center,
@@ -322,6 +346,44 @@ fun LyricLineText(
             // yatayda `bleed` kadar pay alır, böylece kenarlarda sert kesik oluşmaz.
             val clipL = if (scroll) 0f else -bleed
             val clipR = if (scroll) size.width else size.width + bleed
+            if (wordMode) {   // kelimeler adadan gelirken canvas sınırının dışında da çizilir (kırpma yok)
+                translate(left = dx) {
+                    val visEnd = layout.getLineEnd(layout.lineCount - 1, visibleEnd = true)
+                    val len = text.length.toFloat()
+                    // Adanın bu canvas'a göre konumu
+                    val ix = size.width / 2f + origin.dx - dx
+                    val iy = size.height / 2f + origin.dy
+                    for ((i, w) in words.withIndex()) {
+                        if (w.start >= visEnd) break
+                        val a = wordAnims.getOrNull(i)?.value ?: 1f
+                        if (a <= 0.001f) continue
+                        val endC = minOf(w.end, visEnd)
+                        val bl = layout.getBoundingBox(w.start)
+                        val br = layout.getBoundingBox((endC - 1).coerceAtLeast(w.start))
+                        val ln = layout.getLineForOffset(w.start)
+                        val rect = Rect(bl.left, layout.getLineTop(ln), br.right, layout.getLineBottom(ln))
+                        val pivot = rect.center
+                        val sc = 0.12f + 0.88f * a
+                        val tx = (ix - pivot.x) * (1f - a)
+                        val ty = (iy - pivot.y) * (1f - a)
+                        val alpha = (a * 3f).coerceIn(0f, 1f)
+                        val wf = if (cfg.lyricsFillEnabled) ((progress * len - w.start) / (endC - w.start).coerceAtLeast(1)).coerceIn(0f, 1f) else 1f
+                        withTransform({ translate(tx, ty); scale(sc, sc, pivot) }) {
+                            clipRect(rect.left - bleed - 2f, rect.top - bleed, rect.right + bleed + 2f, rect.bottom + bleed) {
+                                if (wf < 0.999f) drawText(layout, color = dim.copy(alpha = dim.alpha * alpha), shadow = if (outside && glowPx <= 0f) shadow else null)
+                                if (wf >= 0.999f) {
+                                    drawText(layout, color = color.copy(alpha = color.alpha * alpha), shadow = shadow)
+                                } else if (wf > 0f) {
+                                    clipRect(rect.left - bleed - 2f, rect.top - bleed, rect.left + rect.width * wf, rect.bottom + bleed) {
+                                        drawText(layout, color = color.copy(alpha = color.alpha * alpha), shadow = shadow)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return@Canvas
+            }
             clipRect(left = clipL, top = -bleed, right = clipR, bottom = size.height + bleed) {
                 translate(left = dx) {
                     if (f < 0.999f) drawText(layout, color = dim, shadow = if (outside && glowPx <= 0f) shadow else null)
@@ -351,6 +413,23 @@ fun LyricLineText(
             }
         }
     }
+}
+
+@Immutable
+private class WordRange(val start: Int, val end: Int, val startFrac: Float)
+
+/** Satırdaki kelimelerin karakter aralıkları; startFrac = kelimenin satırın hangi oranında söylendiği (0..1). */
+private fun wordRanges(text: String): List<WordRange> {
+    val out = ArrayList<WordRange>()
+    val n = text.length.toFloat().coerceAtLeast(1f)
+    var i = 0
+    while (i < text.length) {
+        while (i < text.length && text[i].isWhitespace()) i++
+        val s = i
+        while (i < text.length && !text[i].isWhitespace()) i++
+        if (i > s) out += WordRange(s, i, s / n)
+    }
+    return out
 }
 
 private fun lineText(r: LyricsState.Ready, i: Int): String =
