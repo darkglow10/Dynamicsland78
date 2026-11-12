@@ -88,8 +88,8 @@ fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
             
             // DİNAMİK ÖLÇEKLEME: Bevel ve bend, adanın o anki boyutuna (küçük veya büyük) oranlıdır.
             val minDim = min(w, h)
-            shader.setFloatUniform("bevel", minDim * 0.22f)
-            shader.setFloatUniform("bend", refraction.coerceIn(0f, 1.5f) * (minDim * 0.035f))
+            shader.setFloatUniform("bevel", min(minDim * 0.22f, 16.dp.toPx()))
+            shader.setFloatUniform("bend", refraction.coerceIn(0f, 1.5f) * min(minDim * 0.035f, 5.dp.toPx()))
             shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.4f)
             
             renderEffect = AndroidRenderEffect
@@ -107,6 +107,7 @@ private val BACKDROP_AGSL = """
 uniform shader bg;
 uniform float2 size;
 uniform float2 origin;
+uniform float2 screen;
 uniform float scale;
 uniform float radius;
 uniform float bevel;
@@ -120,20 +121,35 @@ float sdf(float2 p) {
     return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
 }
 
+// Ekran dışına taşan örnekleri aynalar (üst kenarda çizgi uzaması olmasın)
+float2 mirrorTo(float2 p, float2 lim) {
+    float2 m = lim * 2.0;
+    float2 q = mod(p, m);
+    return lim - abs(lim - q);
+}
+
 half4 main(float2 fc) {
     float depth = -sdf(fc);
     if (depth < 0.0 || depth > bevel) return half4(0.0);
     float t = 1.0 - depth / bevel;
     t = t * t * (3.0 - 2.0 * t);
+
+    // Dışa bakan normal
     float2 n = float2(sdf(fc + float2(1.0, 0.0)) - sdf(fc - float2(1.0, 0.0)),
                       sdf(fc + float2(0.0, 1.0)) - sdf(fc - float2(0.0, 1.0)));
     float l = length(n);
     n = l > 0.0001 ? n / l : float2(0.0, -1.0);
-    float r0 = 2.0 + reach * t;
+
+    // Örnek noktası HER ZAMAN adanın DIŞINDA: önce kenara kadar (depth), sonra e kadar dışarı.
+    // Böylece ada kendi içeriğini (yazı, butonlar) yakalayıp tekrar çizmez.
+    float e = 2.0 + reach * t * t;
     float2 sp = origin + fc;
-    half4 cr = bg.eval((sp + n * r0 * (1.0 + disp)) * scale);
-    half4 cg = bg.eval((sp + n * r0) * scale);
-    half4 cb = bg.eval((sp + n * r0 * (1.0 - disp)) * scale);
+    float2 pr = mirrorTo(sp + n * (depth + e * (1.0 + disp)), screen);
+    float2 pg = mirrorTo(sp + n * (depth + e), screen);
+    float2 pb = mirrorTo(sp + n * (depth + e * (1.0 - disp)), screen);
+    half4 cr = bg.eval(pr * scale);
+    half4 cg = bg.eval(pg * scale);
+    half4 cb = bg.eval(pb * scale);
     float a = clamp(strength * t, 0.0, 1.0);
     return half4(half3(cr.r, cg.g, cb.b) * half(a), half(a));
 }
@@ -159,10 +175,13 @@ fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float): Modifier {
             shader.setInputShader("bg", f.shader)
             shader.setFloatUniform("size", w, h)
             shader.setFloatUniform("origin", loc[0] + pos[0], loc[1] + pos[1])
+            val dm = view.resources.displayMetrics
+            shader.setFloatUniform("screen", dm.widthPixels.toFloat(), dm.heightPixels.toFloat())
             shader.setFloatUniform("scale", f.scale)
             shader.setFloatUniform("radius", r)
-            shader.setFloatUniform("bevel", minDim * 0.30f)
-            shader.setFloatUniform("reach", refraction.coerceIn(0f, 1.5f) * minDim * 0.35f)
+            // Bant genişliği adanın boyutundan bağımsız, dp ile sınırlı (açık adada devasa olmasın)
+            shader.setFloatUniform("bevel", min(minDim * 0.45f, 18.dp.toPx()))
+            shader.setFloatUniform("reach", refraction.coerceIn(0f, 1.5f) * min(minDim * 0.30f, 14.dp.toPx()))
             shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.35f)
             shader.setFloatUniform("strength", 0.95f)
             drawRect(ShaderBrush(shader))
