@@ -5,6 +5,9 @@ import android.os.SystemClock
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -27,6 +32,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
@@ -36,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val ANIM_STYLES = listOf(
@@ -77,6 +84,32 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
     var version by remember { mutableIntStateOf(0) }
     var mode by remember { mutableIntStateOf(1) }            // 0 bildirim, 1 müzik
     var expanded by remember { mutableStateOf(lyricsPage) }
+
+    // Galeriden fotoğraf seçici (hangi alan için seçildiği ekran döndürülse de korunur)
+    val scope = rememberCoroutineScope()
+    var pendingSlot by rememberSaveable { mutableStateOf(-1) }
+    // Fotoğraf kopyalanmaz: yalnızca adresi ve kalıcı okuma izni alınır
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val slot = CustomImages.Slot.values().getOrNull(pendingSlot)
+        pendingSlot = -1
+        if (uri != null && slot != null) scope.launch {
+            CustomImages.grant(ctx, uri)
+            val u = uri.toString()
+            if (CustomImages.load(ctx, slot, u) != null) {
+                val old = draft.imageUri(slot)
+                draft = draft.withImageUri(slot, u)
+                if (old != u) CustomImages.releaseUnused(ctx, old, draft)
+            } else {
+                Toast.makeText(ctx.applicationContext, "Fotoğraf açılamadı", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val pick: (CustomImages.Slot) -> Unit = { slot -> pendingSlot = slot.ordinal; picker.launch(arrayOf("image/*")) }
+    val remove: (CustomImages.Slot) -> Unit = { slot ->
+        val old = draft.imageUri(slot)
+        draft = draft.withImageUri(slot, "")
+        CustomImages.releaseUnused(ctx, old, draft)
+    }
 
     // Slider sürüklenirken değil, 250 ms sakinleşince kaydet
     LaunchedEffect(draft) { delay(250); onSave(draft) }
@@ -138,6 +171,43 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 if (draft.artBgEnabled) {
                     SwitchRow("Kapalı adada da göster", "Kapatırsan arka plan yalnızca açılmış adada görünür",
                         draft.artBgCompact) { draft = draft.copy(artBgCompact = it) }
+                }
+            }
+
+            SectionCard("Özel arka plan", "Adanın içini galeriden seçtiğin fotoğrafla doldur") {
+                SwitchRow("Galeriden arka plan", "Fotoğraf adanın içini kaplar; yazıların okunması için hafif karartılır",
+                    draft.customBgEnabled) { draft = draft.copy(customBgEnabled = it) }
+                if (draft.customBgEnabled) {
+                    SubHeader("Fotoğraf nereye uygulansın")
+                    SegmentedTabs(listOf("İkisine de aynı", "Ayrı fotoğraflar"), if (draft.customBgSeparate) 1 else 0) {
+                        draft = draft.copy(customBgSeparate = it == 1)
+                    }
+                    SectionDivider()
+                    if (!draft.customBgSeparate) {
+                        ImagePickRow("Kapalı ve açık ada", "Aynı fotoğraf iki halde de görünür",
+                            CustomImages.Slot.BG_BOTH, draft.customBgBothUri, pick, remove)
+                    } else {
+                        ImagePickRow("Kapalı ada", "Seçmezsen kapalı adada özel arka plan olmaz",
+                            CustomImages.Slot.BG_COMPACT, draft.customBgCompactUri, pick, remove)
+                        SectionDivider()
+                        ImagePickRow("Açık ada", "Seçmezsen açık adada özel arka plan olmaz",
+                            CustomImages.Slot.BG_EXPANDED, draft.customBgExpandedUri, pick, remove)
+                    }
+                    SectionDivider()
+                    SliderRow("Karartma", draft.customBgDim, 0f..0.8f, "%${(draft.customBgDim * 100).toInt()}") { draft = draft.copy(customBgDim = it) }
+                    Text("Özel arka plan, albüm kapağı arka planının üstünde görünür.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+
+            SectionCard("Özel albüm kapağı", "Adanın içindeki kapak yerine galeriden fotoğraf göster") {
+                SwitchRow("Galeriden kapak fotoğrafı", "Kapalı ve açık adadaki küçük albüm kapağı yerine seçtiğin fotoğraf görünür",
+                    draft.customArtEnabled) { draft = draft.copy(customArtEnabled = it) }
+                if (draft.customArtEnabled) {
+                    ImagePickRow("Kapak fotoğrafı", "Her şarkıda bu fotoğraf gösterilir",
+                        CustomImages.Slot.ART, draft.customArtUri, pick, remove)
+                    Text("Fotoğraf seçilmezse gerçek albüm kapağı gösterilir. Ada rengi ve parıltılar yine çalan şarkının kapağından alınır.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
                 }
             }
 
@@ -238,8 +308,43 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
-            IslandActionButton("Varsayılanlara dön", { draft = IslandSettings(); version++ })
+            IslandActionButton("Varsayılanlara dön", { CustomImages.releaseAll(ctx, draft); draft = IslandSettings(); version++ })
             Spacer(Modifier.height(28.dp))
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Fotoğraf seçme satırı
+@Composable
+private fun ImagePickRow(
+    title: String, desc: String, slot: CustomImages.Slot, uri: String,
+    onPick: (CustomImages.Slot) -> Unit, onRemove: (CustomImages.Slot) -> Unit,
+) {
+    val cs = MaterialTheme.colorScheme
+    val img = rememberCustomImage(slot, uri)
+    val has = uri.isNotEmpty()
+    val thumbShape = RoundedCornerShape(12.dp)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(
+                Modifier.size(width = 72.dp, height = 56.dp).clip(thumbShape)
+                    .background(cs.surfaceVariant).border(1.dp, cs.outlineVariant, thumbShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (img != null) {
+                    Image(bitmap = img, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                } else {
+                    Text("Yok", color = cs.onSurfaceVariant, fontSize = 12.sp)
+                }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(if (!has) desc else if (img == null) "Fotoğraf açılamıyor (silinmiş veya taşınmış olabilir)" else "Seçildi", color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { onPick(slot) }, modifier = Modifier.weight(1f)) { Text(if (has) "Değiştir" else "Galeriden seç") }
+            if (has) OutlinedButton(onClick = { onRemove(slot) }, modifier = Modifier.weight(1f)) { Text("Kaldır") }
         }
     }
 }

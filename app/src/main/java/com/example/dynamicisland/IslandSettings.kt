@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -32,6 +33,16 @@ data class IslandSettings(
     // Albüm kapağı arka planı (müzik çalarken adanın içi)
     val artBgEnabled: Boolean = true,
     val artBgCompact: Boolean = true,        // kapalı adada da; kapalıysa yalnızca açık adada
+    // Özel arka plan (galeriden): adanın içi seçilen fotoğrafla dolar
+    val customBgEnabled: Boolean = false,
+    val customBgSeparate: Boolean = false,   // false: tek fotoğraf kapalı + açık ada; true: her hal için ayrı fotoğraf
+    val customBgDim: Float = 0.30f,          // yazıların okunması için karartma
+    val customBgBothUri: String = "",        // boş = fotoğraf seçilmedi; aksi halde galerideki fotoğrafın adresi (kopyalanmaz)
+    val customBgCompactUri: String = "",
+    val customBgExpandedUri: String = "",
+    // Özel albüm kapağı (galeriden): adadaki kapak yerine bu fotoğraf gösterilir
+    val customArtEnabled: Boolean = false,
+    val customArtUri: String = "",
     // Liquid Glass
     val glassEnabled: Boolean = false,
     val glassAlpha: Float = 0.55f,
@@ -143,6 +154,9 @@ class SettingsRepository(context: Context) {
         val OX = floatPreferencesKey("ox"); val OY = floatPreferencesKey("oy")
         val COLOR = intPreferencesKey("color"); val DYN = booleanPreferencesKey("dyn")
         val ART_BG = booleanPreferencesKey("art_bg"); val ART_BG_C = booleanPreferencesKey("art_bg_c")
+        val CB_ON = booleanPreferencesKey("cb_on"); val CB_SEP = booleanPreferencesKey("cb_sep"); val CB_DIM = floatPreferencesKey("cb_dim")
+        val CB_U_BOTH = stringPreferencesKey("cb_u_both"); val CB_U_C = stringPreferencesKey("cb_u_c"); val CB_U_E = stringPreferencesKey("cb_u_e")
+        val CA_ON = booleanPreferencesKey("ca_on"); val CA_U = stringPreferencesKey("ca_u")
         val GLASS = booleanPreferencesKey("glass"); val ALPHA = floatPreferencesKey("alpha"); val BLUR = intPreferencesKey("blur")
         val LQ_ON = booleanPreferencesKey("lq_on"); val LQ_R = floatPreferencesKey("lq_r")
         val LQ_D = floatPreferencesKey("lq_d"); val LQ_S = floatPreferencesKey("lq_s")
@@ -182,6 +196,14 @@ class SettingsRepository(context: Context) {
             dynamicColor = p[K.DYN] ?: d.dynamicColor,
             artBgEnabled = p[K.ART_BG] ?: d.artBgEnabled,
             artBgCompact = p[K.ART_BG_C] ?: d.artBgCompact,
+            customBgEnabled = p[K.CB_ON] ?: d.customBgEnabled,
+            customBgSeparate = p[K.CB_SEP] ?: d.customBgSeparate,
+            customBgDim = p[K.CB_DIM] ?: d.customBgDim,
+            customBgBothUri = p[K.CB_U_BOTH] ?: d.customBgBothUri,
+            customBgCompactUri = p[K.CB_U_C] ?: d.customBgCompactUri,
+            customBgExpandedUri = p[K.CB_U_E] ?: d.customBgExpandedUri,
+            customArtEnabled = p[K.CA_ON] ?: d.customArtEnabled,
+            customArtUri = p[K.CA_U] ?: d.customArtUri,
             glassEnabled = p[K.GLASS] ?: d.glassEnabled,
             glassAlpha = p[K.ALPHA] ?: d.glassAlpha,
             blurRadiusPx = p[K.BLUR] ?: d.blurRadiusPx,
@@ -240,6 +262,9 @@ class SettingsRepository(context: Context) {
             it[K.OX] = s.offsetXDp; it[K.OY] = s.offsetYDp
             it[K.COLOR] = s.accentArgb; it[K.DYN] = s.dynamicColor
             it[K.ART_BG] = s.artBgEnabled; it[K.ART_BG_C] = s.artBgCompact
+            it[K.CB_ON] = s.customBgEnabled; it[K.CB_SEP] = s.customBgSeparate; it[K.CB_DIM] = s.customBgDim
+            it[K.CB_U_BOTH] = s.customBgBothUri; it[K.CB_U_C] = s.customBgCompactUri; it[K.CB_U_E] = s.customBgExpandedUri
+            it[K.CA_ON] = s.customArtEnabled; it[K.CA_U] = s.customArtUri
             it[K.GLASS] = s.glassEnabled; it[K.ALPHA] = s.glassAlpha; it[K.BLUR] = s.blurRadiusPx
             it[K.LQ_ON] = s.liquidEnabled; it[K.LQ_R] = s.liquidRefraction
             it[K.LQ_D] = s.liquidDispersion; it[K.LQ_S] = s.liquidSpecular

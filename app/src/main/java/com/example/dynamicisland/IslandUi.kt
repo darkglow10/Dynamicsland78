@@ -352,6 +352,13 @@ fun IslandPill(
     val highlight = if (cfg.dynamicColor && artColor != null) artColor else accent
     val eqColor = remember(highlight) { brightTone(highlight) }
 
+    // Galeriden seçilen özel görseller (ayar kapalıysa boş adres verilir => null). Diske kopyalanmaz.
+    val bgOn = cfg.customBgEnabled
+    val bgBoth = rememberCustomImage(CustomImages.Slot.BG_BOTH, if (bgOn && !cfg.customBgSeparate) cfg.customBgBothUri else "")
+    val bgCompact = rememberCustomImage(CustomImages.Slot.BG_COMPACT, if (bgOn && cfg.customBgSeparate) cfg.customBgCompactUri else "")
+    val bgExpanded = rememberCustomImage(CustomImages.Slot.BG_EXPANDED, if (bgOn && cfg.customBgSeparate) cfg.customBgExpandedUri else "")
+    val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
+
     val body = animateColorAsState(bodyColorFor(cfg, artColor, accent), tween(450), label = "body")
     val glow = animateColorAsState(artColor ?: accent, tween(450), label = "glow")
 
@@ -373,8 +380,12 @@ fun IslandPill(
     ) {
         // Albüm kapağı arka planı: ada içini kaplar, yazıların okunması için hafif karartılır
         val backdropArt = media?.art
-        if (cfg.artBgEnabled && backdropArt != null) {
+        if (cfg.artBgEnabled && backdropArt != null && bgBoth == null) {
             ArtBackdrop(backdropArt, cfg.artBgCompact, progress)
+        }
+        // Galeriden seçilen arka plan: albüm arka planının üstünde, içeriğin altında
+        if (bgBoth != null || bgCompact != null || bgExpanded != null) {
+            CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
         }
 
         if (panelVisible) {
@@ -385,7 +396,7 @@ fun IslandPill(
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
-                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput)
+                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
                     IslandContent.Idle -> Unit
                 }
             }
@@ -396,7 +407,8 @@ fun IslandPill(
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
-                content.art?.let { art ->
+                val shownArt = customArt ?: content.art
+                shownArt?.let { art ->
                     Image(
                         bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
                         filterQuality = FilterQuality.Medium,
@@ -406,7 +418,7 @@ fun IslandPill(
                 }
                 if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
                     // Albüm kapağı ile equalizer arasındaki orta boşluk
-                    val startPad = if (content.art != null) 8.dp + artSize + 8.dp else 14.dp
+                    val startPad = if (shownArt != null) 8.dp + artSize + 8.dp else 14.dp
                     val endPad = 10.dp + 23.dp + 8.dp
                     CompactLyrics(
                         cfg, lyrics, frame,
@@ -439,6 +451,52 @@ private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: Isla
             filterQuality = FilterQuality.Low, modifier = Modifier.fillMaxSize(),
         )
         Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.50f)))
+    }
+}
+
+/**
+ * Galeriden seçilen fotoğraf(lar) ada içini kaplar.
+ * - Tek fotoğraf: ada büyürken/küçülürken kesintisiz ölçeklenir.
+ * - Ayrı fotoğraflar: kapalı hal ve açık hal kendi boyutunda çizilir, geçişte çapraz solar.
+ *   Bir hal için fotoğraf seçilmemişse o halde özel arka plan çizilmez.
+ */
+@Composable
+private fun CustomBackdrop(
+    both: ImageBitmap?, compact: ImageBitmap?, expanded: ImageBitmap?,
+    dim: Float, geo: Geo, progress: IslandProgress,
+) {
+    @Composable
+    fun Pic(img: ImageBitmap, modifier: Modifier) {
+        Box(modifier) {
+            Image(
+                bitmap = img, contentDescription = null, contentScale = ContentScale.Crop,
+                filterQuality = FilterQuality.Medium, modifier = Modifier.fillMaxSize(),
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim.coerceIn(0f, 0.9f))))
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        if (both != null) {
+            Pic(both, Modifier.fillMaxSize())
+        } else {
+            if (compact != null) {
+                Pic(
+                    compact,
+                    Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).graphicsLayer {
+                        // Açık ada için fotoğraf varsa altta sabit kalır (üstüne açık fotoğraf biner), yoksa açılırken solar
+                        alpha = if (expanded != null) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                    },
+                )
+            }
+            if (expanded != null) {
+                Pic(
+                    expanded,
+                    Modifier.requiredSize(geo.ew, geo.eh).align(Alignment.TopCenter).graphicsLayer {
+                        alpha = (progress.mean / 0.6f).coerceIn(0f, 1f)
+                    },
+                )
+            }
+        }
     }
 }
 

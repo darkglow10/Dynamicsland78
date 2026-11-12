@@ -129,6 +129,7 @@ fun MusicPanel(
     frame: LyricFrame,
     onCommand: (MediaCommand) -> Unit,
     onOutput: () -> Unit,
+    customArt: ImageBitmap? = null,   // galeriden seçilen kapak; doluysa albüm kapağı yerine gösterilir
 ) {
     val ctx = LocalContext.current
     val rb = rememberRainbowStyle(cfg)
@@ -156,7 +157,7 @@ fun MusicPanel(
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            AlbumArt(m.art, 60.dp)                                   // sol köşe
+            AlbumArt(customArt ?: m.art, 60.dp)                                   // sol köşe
             // Kapak yüksekliğinde alan: şarkı adı ortada, sanatçı adı kapağın alt kenarıyla hizalı
             Box(Modifier.weight(1f).height(60.dp)) {
                 MarqueeText(
