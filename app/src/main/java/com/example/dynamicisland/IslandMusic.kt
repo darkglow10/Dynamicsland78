@@ -2,6 +2,7 @@ package com.example.dynamicisland
 
 import android.content.Context
 import android.os.SystemClock
+import android.widget.Toast
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -126,6 +127,18 @@ fun MusicPanel(
     val ctx = LocalContext.current
     val favKey = remember(m.title, m.artist) { "${m.title}|${m.artist}" }
     var fav by remember(favKey) { mutableStateOf(FavoriteStore.isFav(ctx, favKey)) }
+    var lastTap by remember { mutableLongStateOf(0L) }
+    // Uygulamanın gerçek beğeni durumu biliniyorsa kalbi ona eşitle (dokunuştan hemen sonra karışma)
+    LaunchedEffect(favKey) {
+        while (true) {
+            if (SystemClock.elapsedRealtime() - lastTap > 2500) {
+                PlayerLike.likedState(ctx, m.title)?.let { real ->
+                    if (real != fav) { fav = real; FavoriteStore.set(ctx, favKey, real) }
+                }
+            }
+            delay(2000)
+        }
+    }
 
     Column(
         Modifier.fillMaxSize().padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 20.dp),
@@ -153,8 +166,16 @@ fun MusicPanel(
 
         MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp)) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
+        Row(Modifier.fillMaxWidth().offset(y = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp)) {
+                val want = !fav
+                fav = want; lastTap = SystemClock.elapsedRealtime()
+                FavoriteStore.set(ctx, favKey, want)
+                // Çalan uygulamada da beğen / beğenmekten vazgeç
+                if (!PlayerLike.setLiked(ctx, m.title, want)) {
+                    Toast.makeText(ctx.applicationContext, "Bu oynatıcı dışarıdan beğenmeyi desteklemiyor", Toast.LENGTH_SHORT).show()
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 CtlButton(Ctl.Rew, 24.dp) { onCommand(MediaCommand.Previous) }
                 CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp) { onCommand(MediaCommand.PlayPause) }
