@@ -134,8 +134,11 @@ private val SheenBrush = Brush.verticalGradient(
 private fun darkTone(c: Color): Color {
     val hsv = FloatArray(3)
     android.graphics.Color.colorToHSV(c.toArgb(), hsv)
-    hsv[1] = hsv[1].coerceIn(0.5f, 1f)
-    hsv[2] = 0.26f
+    // Eskiden çok koyuydu (0.26): artık kapak rengi daha canlı görünür, beyaz yazı yine rahat okunur.
+    // Gri/siyah kapaklar kırmızıya boyanmasın diye gri kalır.
+    val gray = hsv[1] < 0.12f
+    hsv[1] = if (gray) hsv[1] else hsv[1].coerceIn(0.55f, 0.95f)
+    hsv[2] = if (gray) 0.30f else 0.50f
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
