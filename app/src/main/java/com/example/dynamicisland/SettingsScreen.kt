@@ -144,6 +144,19 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                         if (liquidRefractionSupported()) {
                             SliderRow("Kırılma", draft.liquidRefraction, 0f..1.5f, "%${(draft.liquidRefraction * 100).toInt()}") { draft = draft.copy(liquidRefraction = it) }
                             SliderRow("Renk ayrışması", draft.liquidDispersion, 0f..1f, "%${(draft.liquidDispersion * 100).toInt()}") { draft = draft.copy(liquidDispersion = it) }
+                            Text("Gerçek zamanlı kırılma için ekran yakalama izni gerekir (Android her açılışta sorar; \"Tüm ekran\" seç).",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                            if (!LiquidCapture.running) {
+                                Button(onClick = {
+                                    ctx.startActivity(android.content.Intent(ctx, CapturePermissionActivity::class.java)
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                                }) { Text("Gerçek zamanlı modu başlat") }
+                            } else {
+                                OutlinedButton(onClick = {
+                                    ctx.startService(android.content.Intent(ctx, ScreenCaptureService::class.java)
+                                        .setAction(ScreenCaptureService.ACTION_STOP))
+                                }) { Text("Gerçek zamanlı modu durdur") }
+                            }
                         } else {
                             Text("Kırılma shader'ı Android 13+ gerektirir; bu cihazda yalnızca derinlik ve parlama çizilir.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)

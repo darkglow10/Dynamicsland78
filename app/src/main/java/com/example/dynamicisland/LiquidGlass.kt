@@ -19,6 +19,11 @@ import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -90,6 +95,77 @@ fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
             renderEffect = AndroidRenderEffect
                 .createRuntimeShaderEffect(shader, "content")
                 .asComposeRenderEffect()
+        }
+}
+
+/**
+ * GERÇEK ZAMANLI ARKA PLAN KIRILMASI
+ * Ekran yakalama karesi (LiquidCapture) kullanılır. Adanın kenar bandında, adanın DIŞINDAKİ ekran
+ * içeriği (ada kendini yakalamasın diye dışarıdan örneklenir) bükülerek ve renk ayrışarak gösterilir.
+ */
+private val BACKDROP_AGSL = """
+uniform shader bg;
+uniform float2 size;
+uniform float2 origin;
+uniform float scale;
+uniform float radius;
+uniform float bevel;
+uniform float reach;
+uniform float disp;
+uniform float strength;
+
+float sdf(float2 p) {
+    float2 hs = size * 0.5;
+    float2 q = abs(p - hs) - (hs - float2(radius));
+    return length(max(q, float2(0.0))) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+half4 main(float2 fc) {
+    float depth = -sdf(fc);
+    if (depth < 0.0 || depth > bevel) return half4(0.0);
+    float t = 1.0 - depth / bevel;
+    t = t * t * (3.0 - 2.0 * t);
+    float2 n = float2(sdf(fc + float2(1.0, 0.0)) - sdf(fc - float2(1.0, 0.0)),
+                      sdf(fc + float2(0.0, 1.0)) - sdf(fc - float2(0.0, 1.0)));
+    float l = length(n);
+    n = l > 0.0001 ? n / l : float2(0.0, -1.0);
+    float r0 = 2.0 + reach * t;
+    float2 sp = origin + fc;
+    half4 cr = bg.eval((sp + n * r0 * (1.0 + disp)) * scale);
+    half4 cg = bg.eval((sp + n * r0) * scale);
+    half4 cb = bg.eval((sp + n * r0 * (1.0 - disp)) * scale);
+    float a = clamp(strength * t, 0.0, 1.0);
+    return half4(half3(cr.r, cg.g, cb.b) * half(a), half(a));
+}
+"""
+
+@SuppressLint("NewApi")
+@Composable
+fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float): Modifier {
+    if (Build.VERSION.SDK_INT < 33) return this
+    val shader = remember { RuntimeShader(BACKDROP_AGSL) }
+    val view = LocalView.current
+    val pos = remember { FloatArray(2) }
+    val loc = remember { IntArray(2) }
+    return this
+        .onGloballyPositioned { c -> val p = c.positionInRoot(); pos[0] = p.x; pos[1] = p.y }
+        .drawBehind {
+            val f = LiquidCapture.frame ?: return@drawBehind
+            val w = size.width; val h = size.height
+            if (w < 2f || h < 2f) return@drawBehind
+            view.getLocationOnScreen(loc)
+            val minDim = min(w, h)
+            val r = min(LiquidMaxRadius.toPx(), h / 2f)
+            shader.setInputShader("bg", f.shader)
+            shader.setFloatUniform("size", w, h)
+            shader.setFloatUniform("origin", loc[0] + pos[0], loc[1] + pos[1])
+            shader.setFloatUniform("scale", f.scale)
+            shader.setFloatUniform("radius", r)
+            shader.setFloatUniform("bevel", minDim * 0.30f)
+            shader.setFloatUniform("reach", refraction.coerceIn(0f, 1.5f) * minDim * 0.35f)
+            shader.setFloatUniform("disp", dispersion.coerceIn(0f, 1f) * 0.35f)
+            shader.setFloatUniform("strength", 0.95f)
+            drawRect(ShaderBrush(shader))
         }
 }
 

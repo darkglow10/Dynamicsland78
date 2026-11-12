@@ -289,13 +289,14 @@ private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>): Mod
     val liquid = cfg.glassEnabled && cfg.liquidEnabled
     var m = this.clip(PillShape).drawBehind { drawRect(body.value) }
     if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular) }
+    if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion)
     else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase() }
     if (cfg.borderEnabled) m = m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), PillShape)
     // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
     if (liquid) m = m.drawWithContent { drawContent(); drawLiquidRim(cfg.liquidSpecular) }
     else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim() }
     // En içte: yalnızca iç içerik (kapak, yazı, butonlar) kenarlarda bükülür (Android 13+)
-    if (liquid) m = m.liquidRefraction(cfg.liquidRefraction, cfg.liquidDispersion)
+    if (liquid && !LiquidCapture.running) m = m.liquidRefraction(cfg.liquidRefraction, cfg.liquidDispersion)
     return m
 }
 
