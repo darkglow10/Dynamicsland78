@@ -85,7 +85,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var calibDy = 0               // ölçülen kayma (px)
     private var calibTries = 0
     private val calibrateRunnable = Runnable { calibrate() }
-    private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(60)?.start() }
+    private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(120)?.start() }
+    private var resizeListener: View.OnLayoutChangeListener? = null
 
     private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings)
 
@@ -372,8 +373,25 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             composeView?.let { v ->
                 v.animate().cancel()
                 v.removeCallbacks(showAgain)
+                resizeListener?.let { v.removeOnLayoutChangeListener(it) }
                 v.alpha = 0f
-                v.postDelayed(showAgain, RESIZE_HIDE_MS)
+                // Sistem yeni boyutu gerçekten uygulayınca (yerleşim değişince) kısa süre sonra göster;
+                // böylece eski/yanlış konumdaki kareler görünmez ve ada yana kayarak gelmez.
+                val l = object : View.OnLayoutChangeListener {
+                    override fun onLayoutChange(
+                        view: View, left: Int, top: Int, right: Int, bottom: Int,
+                        oldLeft: Int, oldTop: Int, oldRight: Int, oldBottom: Int,
+                    ) {
+                        if (right - left == oldRight - oldLeft) return
+                        view.removeOnLayoutChangeListener(this)
+                        if (resizeListener === this) resizeListener = null
+                        view.removeCallbacks(showAgain)
+                        view.postDelayed(showAgain, RESIZE_HIDE_MS)
+                    }
+                }
+                resizeListener = l
+                v.addOnLayoutChangeListener(l)
+                v.postDelayed(showAgain, 500)      // güvenlik: yerleşim değişmezse yine de göster
             }
         }
         win.attributes = lp
