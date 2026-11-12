@@ -8,8 +8,12 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Yalnızca adb ile verilirse: erişilebilirlik servisi çökünce uygulama kendini onarır -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
     <application
+        android:name=".DynamicIslandApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
 android:roundIcon="@mipmap/ic_launcher_round"
