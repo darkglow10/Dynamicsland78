@@ -2,6 +2,12 @@ package com.example.dynamicisland
 
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.SizeTransform
@@ -48,6 +54,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.max
 
 // ---------------------------------------------------------------- Senkron: hangi satır, ne kadar söylendi
 @Stable
@@ -122,6 +129,68 @@ fun rememberLyricFrame(
 }
 
 // ---------------------------------------------------------------- Satır geçiş animasyonu
+/**
+ * Sözün çıkacağı nokta: söz alanının merkezinden adanın merkezine olan fark (piksel).
+ * Yalnızca "Adanın dışında" söz penceresi doldurur; diğer yerlerde (0, 0) kalır ve söz kendi yerinde küçülüp büyür.
+ */
+@Immutable
+data class LyricOrigin(val dx: Float = 0f, val dy: Float = 0f)
+
+val LocalLyricOrigin = compositionLocalOf { LyricOrigin() }
+
+/** 6 = Adadan çıkış, 7 = Adadan tek tek: sözlerin adanın içinden çıkıp büyümesi (dış söz penceresi taşmayı karşılar). */
+fun IslandSettings.lyricsFromIsland(): Boolean = lyricsAnimEnabled && (lyricsAnimStyle == 6 || lyricsAnimStyle == 7)
+
+private val PopEasing = CubicBezierEasing(0.2f, 1.25f, 0.4f, 1f)   // hafif taşan "pop" eğrisi
+
+private class LyricTiming(val enterMs: Int, val enterDelay: Int, val exitMs: Int, val easing: androidx.compose.animation.core.Easing)
+
+private fun lyricTiming(style: Int, d: Int): LyricTiming = when (style) {
+    6 -> LyricTiming(enterMs = d, enterDelay = 0, exitMs = d, easing = FastOutSlowInEasing)               // eski adaya girerken yeni çıkar
+    7 -> LyricTiming(enterMs = d, enterDelay = (d * 0.45f).toInt(), exitMs = (d * 0.45f).toInt(), easing = PopEasing) // önce eski kaybolur, sonra yeni çıkar
+    9 -> LyricTiming(enterMs = d / 2, enterDelay = d / 2, exitMs = d / 2, easing = FastOutSlowInEasing)  // çevirme: önce eski döner, sonra yeni
+    else -> LyricTiming(enterMs = d, enterDelay = 0, exitMs = (d * 0.6f).toInt(), easing = FastOutSlowInEasing)
+}
+
+/** Özel (ölçek / öteleme / döndürme) animasyonları: AnimatedContent'in giriş-çıkış geçişine bağlanır. */
+@Composable
+private fun AnimatedContentScope.LyricLayer(style: Int, d: Int, content: @Composable () -> Unit) {
+    val t = remember(style, d) { lyricTiming(style, d) }
+    val origin = LocalLyricOrigin.current
+    val camera = LocalDensity.current.density * 14f
+    val enter = transition.animateFloat(
+        transitionSpec = { tween(t.enterMs, t.enterDelay, t.easing) }, label = "lyEnter",
+    ) { if (it == EnterExitState.PreEnter) 0f else 1f }
+    val exit = transition.animateFloat(
+        transitionSpec = { tween(t.exitMs, 0, FastOutSlowInEasing) }, label = "lyExit",
+    ) { if (it == EnterExitState.PostExit) 1f else 0f }
+
+    Box(
+        Modifier.graphicsLayer {
+            val e = enter.value
+            val x = exit.value
+            when (style) {
+                6, 7 -> {
+                    // k: 0 = yerinde (tam boy), 1 = adanın içinde (küçük)
+                    val k = max(1f - e, x)
+                    val sc = 0.12f + 0.88f * (1f - k)
+                    scaleX = sc; scaleY = sc
+                    translationX = origin.dx * k
+                    translationY = origin.dy * k
+                }
+                9 -> {
+                    cameraDistance = camera
+                    rotationX = -90f * (1f - e) + 90f * x
+                }
+                else -> {   // 10: odak çekme
+                    val sc = 1f + 0.40f * (1f - e) - 0.15f * x
+                    scaleX = sc; scaleY = sc
+                }
+            }
+        }
+    ) { content() }
+}
+
 @Composable
 fun LyricTransition(
     index: Int,
@@ -150,12 +219,22 @@ fun LyricTransition(
                     (scaleOut(tween(d), targetScale = 1.15f) + fadeOut(tween(d / 2)))
                 3 -> (slideInVertically(spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessMediumLow)) { it } + fadeIn(tween(d / 2))) togetherWith
                     (slideOutVertically(tween(d)) { -it } + fadeOut(tween(d / 2)))
-                else -> (slideInHorizontally(tween(d)) { it / 3 } + fadeIn(tween(d))) togetherWith
+                4 -> (slideInHorizontally(tween(d)) { it / 3 } + fadeIn(tween(d))) togetherWith
                     (slideOutHorizontally(tween(d)) { -it / 3 } + fadeOut(tween(d / 2)))
+                8 -> // Soldan açılma: satır soldan sağa açılarak belirir
+                    (expandHorizontally(tween(d, easing = FastOutSlowInEasing), expandFrom = Alignment.Start, clip = true) +
+                        fadeIn(tween(d / 2))) togetherWith fadeOut(tween(d / 2))
+                else -> {   // 6, 7, 9, 10: ölçek/öteleme/döndürme LyricLayer'da; burada yalnızca solma süresi
+                    val tm = lyricTiming(style, d)
+                    fadeIn(tween(tm.enterMs, tm.enterDelay, FastOutSlowInEasing)) togetherWith fadeOut(tween(tm.exitMs))
+                }
             }
             t.using(SizeTransform(clip = false))
         },
-    ) { i -> content(i) }
+    ) { i ->
+        if (style == 6 || style == 7 || style == 9 || style == 10) LyricLayer(style, d) { content(i) }
+        else content(i)
+    }
 }
 
 /** Albüm kapağının baskın renginden, koyu ada üstünde okunaklı (açık ve canlı) bir söz rengi üretir. */
@@ -338,8 +417,10 @@ fun OutsideLyricsRoot(
     settingsFlow: StateFlow<IslandSettings>,
     lyricsFlow: StateFlow<LyricsState>,
     mediaFlow: StateFlow<IslandContent.Media?>,
+    originFlow: StateFlow<LyricOrigin>,
 ) {
     val cfg by settingsFlow.collectAsState()
+    val origin by originFlow.collectAsState()
     val lyrics by lyricsFlow.collectAsState()
     val media by mediaFlow.collectAsState()
     val u by ui.collectAsState()
@@ -349,9 +430,24 @@ fun OutsideLyricsRoot(
     val frame = rememberLyricFrame(media, lyrics, cfg.lyricsOffsetMs.toLong(), active = show, fine = cfg.lyricsFillEnabled)
     val shownAlpha by animateFloatAsState(if (show) 1f else 0f, tween(250), label = "outA")
     if (shownAlpha > 0.01f) {
-        Box(
-            Modifier.fillMaxSize().padding(24.dp).graphicsLayer { this.alpha = shownAlpha },
-            contentAlignment = Alignment.Center,
-        ) { OutsideLyricText(cfg, lyrics, frame, Modifier.fillMaxWidth(), artColor = media?.artColor ?: 0) }
+        if (cfg.lyricsFromIsland()) {
+            // Pencere adaya kadar uzatıldı (üstte boş pay var): söz alanı altta, eski yerinde kalır; sözler adadan çıkıp oraya gelir
+            val areaDp = (cfg.lyricsOutsideSizeSp * LocalDensity.current.fontScale * 1.3f * cfg.lyricsOutsideLines).dp
+            CompositionLocalProvider(LocalLyricOrigin provides origin) {
+                Box(
+                    Modifier.fillMaxSize().padding(24.dp).graphicsLayer { this.alpha = shownAlpha },
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Box(Modifier.fillMaxWidth().height(areaDp), contentAlignment = Alignment.Center) {
+                        OutsideLyricText(cfg, lyrics, frame, Modifier.fillMaxWidth(), artColor = media?.artColor ?: 0)
+                    }
+                }
+            }
+        } else {
+            Box(
+                Modifier.fillMaxSize().padding(24.dp).graphicsLayer { this.alpha = shownAlpha },
+                contentAlignment = Alignment.Center,
+            ) { OutsideLyricText(cfg, lyrics, frame, Modifier.fillMaxWidth(), artColor = media?.artColor ?: 0) }
+        }
     }
 }
