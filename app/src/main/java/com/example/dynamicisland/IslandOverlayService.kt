@@ -397,9 +397,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
         val lp = WindowManager.LayoutParams().also { it.copyFrom(cur) }
         lp.width = w; lp.height = ah; lp.x = x; lp.y = ay
-        // Pencere KÜÇÜLÜRKEN sistem eski kareyi bir an yanlış yerde gösterebiliyor (yana kayma):
-        // o birkaç kare boyunca içeriği gizleyip hemen geri getiriyoruz.
-        if (big && curW > 1 && w < curW) {
+        // Pencere KÜÇÜLÜRKEN ve yatay konumu da DEĞİŞİRKEN sistem eski kareyi bir an yanlış yerde
+        // gösterebiliyor (yana kayma): yalnızca o durumda içeriği kısa süre gizleyip geri getiriyoruz.
+        // Konum aynıysa (ada pencerenin ortasında kalıyorsa) gizlemeye gerek yok; gizlemek
+        // kapanırken adanın bir an kaybolup geri gelmesine (göz kırpma) yol açıyordu.
+        if (big && curW > 1 && w < curW && cur.x != x) {
             composeView?.let { v ->
                 v.animate().cancel()
                 v.removeCallbacks(showAgain)
@@ -421,7 +423,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 }
                 resizeListener = l
                 v.addOnLayoutChangeListener(l)
-                v.postDelayed(showAgain, 500)      // güvenlik: yerleşim değişmezse yine de göster
+                v.postDelayed(showAgain, 250)      // güvenlik: yerleşim değişmezse yine de göster
             }
         }
         win.attributes = lp
