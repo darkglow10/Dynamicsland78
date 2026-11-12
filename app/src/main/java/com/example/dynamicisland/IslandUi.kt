@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -291,7 +292,17 @@ private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>): Mod
     if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular) }
     if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion)
     else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase() }
-    if (cfg.borderEnabled) m = m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), PillShape)
+    if (cfg.borderEnabled) {
+        val rbBorder = rememberRainbowStyle(cfg)
+        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), PillShape)
+        else m.drawWithContent {
+            drawContent()
+            // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
+            val w = cfg.borderWidthDp.dp.toPx() * 2f
+            val brush = rainbowBrush(rbBorder.phase.value, size.width, rbBorder.alpha)
+            drawOutline(PillShape.createOutline(size, layoutDirection, this), brush, style = Stroke(width = w))
+        }
+    }
     // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
     if (liquid) m = m.drawWithContent { drawContent(); drawLiquidRim(cfg.liquidSpecular) }
     else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim() }
@@ -335,6 +346,7 @@ fun IslandPill(
     onOutput: () -> Unit,
 ) {
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
+    val rb = rememberRainbowStyle(cfg)
     val media = content as? IslandContent.Media
     val artColor = if (media != null && media.artColor != 0) Color(media.artColor) else null
     val highlight = if (cfg.dynamicColor && artColor != null) artColor else accent
@@ -372,7 +384,7 @@ fun IslandPill(
                     .graphicsLayer { alpha = ((progress.mean - 0.45f) / 0.55f).coerceIn(0f, 1f) }
             ) {
                 when (content) {
-                    is IslandContent.Notif -> NotifContent(content, accent)
+                    is IslandContent.Notif -> NotifContent(content, accent, rb)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput)
                     IslandContent.Idle -> Unit
                 }
@@ -404,7 +416,7 @@ fun IslandPill(
                     )
                 }
                 Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
-                    if (content.playing) Equalizer(eqColor)
+                    if (content.playing) Equalizer(eqColor, rainbow = rb)
                     else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
                 }
 
@@ -431,7 +443,7 @@ private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: Isla
 }
 
 @Composable
-private fun NotifContent(c: IslandContent.Notif, accent: Color) {
+private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle?) {
     val iconShape = RoundedCornerShape(13.dp)
     Row(
         Modifier.fillMaxSize().padding(horizontal = 18.dp),
@@ -450,17 +462,18 @@ private fun NotifContent(c: IslandContent.Notif, accent: Color) {
                 Text(
                     c.title.trim().take(1).uppercase().ifEmpty { "•" },
                     color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    modifier = Modifier.rainbowFill(rb, 0.dp),
                 )
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             if (c.title.isNotBlank()) {
                 Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
             if (c.text.isNotBlank()) {
                 Text(c.text, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp, lineHeight = 18.sp,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
         }
     }
