@@ -72,6 +72,7 @@ fun SettingsScreen(lyricsPage: Boolean = false) {
 
 @Composable
 private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: suspend (IslandSettings) -> Unit) {
+    val ctx = LocalContext.current
     var draft by remember { mutableStateOf(init) }
     var version by remember { mutableIntStateOf(0) }
     var mode by remember { mutableIntStateOf(1) }            // 0 bildirim, 1 müzik
