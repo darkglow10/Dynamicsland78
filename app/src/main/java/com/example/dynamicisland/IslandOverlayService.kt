@@ -115,10 +115,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Bildirim dinleyicisi sistem tarafından yeniden bağlanırken zaman alabilir (özellikle uzun süre sonra):
         // müzik gelene kadar birkaç kez tekrar iste.
         scope.launch {
+            var attempt = 0
             for (wait in longArrayOf(1_500, 3_000, 6_000, 12_000)) {
                 delay(wait)
                 if (lastMedia != null) break
-                IslandNotificationListener.republish(this@IslandOverlayService)
+                IslandNotificationListener.republish(this@IslandOverlayService, force = attempt++ >= 1)
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
@@ -540,9 +541,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             val wantTop = (islandCy - dp(10f)).coerceAtLeast(0)
             val extra = (y - wantTop).coerceAtLeast(0)
             y -= extra; h += extra
+            val screenW = wm.currentWindowMetrics.bounds.width()
             outsideOrigin.value = LyricOrigin(
                 dx = (cutCenterXOffsetPx + dp(s.offsetXDp) - x).toFloat(),
                 dy = (islandCy - textCy).toFloat(),
+                // Adanın ekran üzerindeki merkezi: söz alanının GERÇEK konumu ölçülüp farkı oradan hesaplanır
+                ix = screenW / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+                iy = islandCy.toFloat(),
             )
         } else {
             outsideOrigin.value = LyricOrigin()
