@@ -142,6 +142,15 @@ private fun darkTone(c: Color): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
+/** Ekolayzır için: albüm rengi aynı tonda ama en parlak ve biraz pastel; koyu ada gövdesinden net ayrılır. */
+private fun brightTone(c: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    hsv[1] = (hsv[1] * 0.85f).coerceIn(0f, 0.8f)
+    hsv[2] = 1f
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
 private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color {
     val tint: Color? = if (cfg.dynamicColor) art else null
     return when {
@@ -197,6 +206,7 @@ fun IslandPill(
     val media = content as? IslandContent.Media
     val artColor = if (media != null && media.artColor != 0) Color(media.artColor) else null
     val highlight = if (cfg.dynamicColor && artColor != null) artColor else accent
+    val eqColor = remember(highlight) { brightTone(highlight) }
 
     val body = animateColorAsState(bodyColorFor(cfg, artColor, accent), tween(450), label = "body")
     val glow = animateColorAsState(artColor ?: accent, tween(450), label = "glow")
@@ -225,7 +235,7 @@ fun IslandPill(
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent)
-                    is IslandContent.Media -> MusicPanel(content, highlight, cfg, lyrics, frame, onCommand, onOutput)
+                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput)
                     IslandContent.Idle -> Unit
                 }
             }
@@ -255,7 +265,7 @@ fun IslandPill(
                     )
                 }
                 Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
-                    if (content.playing) Equalizer(highlight)
+                    if (content.playing) Equalizer(eqColor)
                     else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
                 }
 
