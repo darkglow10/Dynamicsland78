@@ -34,7 +34,9 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -111,15 +113,18 @@ private fun SetupScreen() {
 
     LaunchedEffect(waiting) {
         val w = waiting ?: return@LaunchedEffect
-        val end = SystemClock.elapsedRealtime() + 180_000L
-        while (SystemClock.elapsedRealtime() < end) {
-            delay(400)
-            val granted = when (w) {
-                "overlay" -> ctx.hasOverlay()
-                "listener" -> ctx.hasListener()
-                else -> ctx.hasAccessibility()
+        // Arka plan iş parçacığında sık (60 ms) kontrol: izin verildiği anda öne getir
+        withContext(Dispatchers.Default) {
+            val end = SystemClock.elapsedRealtime() + 180_000L
+            while (SystemClock.elapsedRealtime() < end) {
+                delay(60)
+                val granted = when (w) {
+                    "overlay" -> ctx.hasOverlay()
+                    "listener" -> ctx.hasListener()
+                    else -> ctx.hasAccessibility()
+                }
+                if (granted) { bringAppToFront(ctx); break }
             }
-            if (granted) { bringAppToFront(ctx); break }
         }
         waiting = null
     }
