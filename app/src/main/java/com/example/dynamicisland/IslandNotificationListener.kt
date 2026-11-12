@@ -47,15 +47,22 @@ class IslandNotificationListener : NotificationListenerService() {
          * Ada servisi (yeniden) başlayınca çağrılır: o an çalan müziği tekrar yayınlar.
          * Dinleyici hiç bağlı değilse sistemden yeniden bağlanmasını ister.
          */
-        fun republish(ctx: android.content.Context) {
+        fun republish(ctx: android.content.Context, force: Boolean = false) {
             val i = instance
             if (i != null) {
                 i.lastPublished = null
                 runCatching { i.bind(i.msm.getActiveSessions(ComponentName(i, IslandNotificationListener::class.java))) }
                     .onFailure { i.publishMedia() }
             } else {
-                runCatching {
-                    NotificationListenerService.requestRebind(ComponentName(ctx, IslandNotificationListener::class.java))
+                val cn = ComponentName(ctx, IslandNotificationListener::class.java)
+                runCatching { NotificationListenerService.requestRebind(cn) }
+                if (force) {
+                    // Bazı cihazlar requestRebind'ı yok sayar (süreç öldürüldükten sonra): bileşeni kapatıp açmak yeniden bağlanmayı zorlar
+                    runCatching {
+                        val pm = ctx.packageManager
+                        pm.setComponentEnabledSetting(cn, android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED, android.content.pm.PackageManager.DONT_KILL_APP)
+                        pm.setComponentEnabledSetting(cn, android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED, android.content.pm.PackageManager.DONT_KILL_APP)
+                    }
                 }
             }
         }
