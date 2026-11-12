@@ -104,6 +104,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { reattach() }
         scope.launch { IslandBus.events.collect(::handle) }
+        // Durdur → Başlat sonrası: zaten çalan müziği (değişmediği için yeniden gelmeyen) tekrar iste
+        IslandNotificationListener.republish(this)
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
         scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s) } }
         scope.launch { lyrics.collect { update { it } } }
