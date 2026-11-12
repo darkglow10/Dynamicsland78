@@ -120,7 +120,7 @@ fun MusicPanel(
         MusicProgress(m) { onCommand(MediaCommand.SeekTo(it)) }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 16.dp, Modifier.offset(x = (-8).dp)) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
+            CtlButton(if (fav) Ctl.HeartOn else Ctl.Heart, 22.dp, Modifier.offset(x = (-8).dp)) { fav = !fav; FavoriteStore.set(ctx, favKey, fav) }
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 CtlButton(Ctl.Rew, 24.dp) { onCommand(MediaCommand.Previous) }
                 CtlButton(if (m.playing) Ctl.Pause else Ctl.Play, 28.dp) { onCommand(MediaCommand.PlayPause) }
@@ -207,7 +207,6 @@ private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, onChan
         val th = thick.dp.toPx()
         drawRoundRect(Color.White.copy(0.22f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
         drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size((size.width * fraction).coerceAtLeast(0f), th), CornerRadius(th / 2))
-        if (thick > 5.4f) drawCircle(Color.White, radius = th * 0.85f, center = Offset((size.width * fraction).coerceIn(0f, size.width), cy))
     }
 }
 
@@ -296,4 +295,3 @@ private fun PlayButton(playing: Boolean, onClick: () -> Unit) {
         }
     }
 }
-
