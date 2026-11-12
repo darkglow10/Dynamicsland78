@@ -29,6 +29,9 @@ data class IslandSettings(
     // Renk
     val accentArgb: Int = 0xFF0A84FF.toInt(),
     val dynamicColor: Boolean = true,        // albüm kapağından renk
+    // Albüm kapağı arka planı (müzik çalarken adanın içi)
+    val artBgEnabled: Boolean = true,
+    val artBgCompact: Boolean = true,        // kapalı adada da; kapalıysa yalnızca açık adada
     // Liquid Glass
     val glassEnabled: Boolean = false,
     val glassAlpha: Float = 0.55f,
@@ -120,6 +123,7 @@ class SettingsRepository(context: Context) {
         val W = floatPreferencesKey("w"); val H = floatPreferencesKey("h")
         val OX = floatPreferencesKey("ox"); val OY = floatPreferencesKey("oy")
         val COLOR = intPreferencesKey("color"); val DYN = booleanPreferencesKey("dyn")
+        val ART_BG = booleanPreferencesKey("art_bg"); val ART_BG_C = booleanPreferencesKey("art_bg_c")
         val GLASS = booleanPreferencesKey("glass"); val ALPHA = floatPreferencesKey("alpha"); val BLUR = intPreferencesKey("blur")
         val GLOW = booleanPreferencesKey("glow"); val GLOW_I = floatPreferencesKey("glowI")
         val BORDER = booleanPreferencesKey("border"); val BORDER_C = intPreferencesKey("borderC"); val BORDER_W = floatPreferencesKey("borderW")
@@ -151,6 +155,8 @@ class SettingsRepository(context: Context) {
             offsetYDp = p[K.OY] ?: d.offsetYDp,
             accentArgb = p[K.COLOR] ?: d.accentArgb,
             dynamicColor = p[K.DYN] ?: d.dynamicColor,
+            artBgEnabled = p[K.ART_BG] ?: d.artBgEnabled,
+            artBgCompact = p[K.ART_BG_C] ?: d.artBgCompact,
             glassEnabled = p[K.GLASS] ?: d.glassEnabled,
             glassAlpha = p[K.ALPHA] ?: d.glassAlpha,
             blurRadiusPx = p[K.BLUR] ?: d.blurRadiusPx,
@@ -194,6 +200,7 @@ class SettingsRepository(context: Context) {
             it[K.W] = s.expandedWidthDp; it[K.H] = s.expandedHeightDp
             it[K.OX] = s.offsetXDp; it[K.OY] = s.offsetYDp
             it[K.COLOR] = s.accentArgb; it[K.DYN] = s.dynamicColor
+            it[K.ART_BG] = s.artBgEnabled; it[K.ART_BG_C] = s.artBgCompact
             it[K.GLASS] = s.glassEnabled; it[K.ALPHA] = s.glassAlpha; it[K.BLUR] = s.blurRadiusPx
             it[K.GLOW] = s.glowEnabled; it[K.GLOW_I] = s.glowIntensity
             it[K.BORDER] = s.borderEnabled; it[K.BORDER_C] = s.borderColorArgb; it[K.BORDER_W] = s.borderWidthDp
