@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -45,6 +46,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
@@ -213,7 +215,7 @@ private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, onSeek: (
     // Parıltı rengi: kapaktan (açıksa ve kapak varsa), yoksa ayarlardaki renk
     val baseGlow = if (cfg.progressGlowArtColor && m.artColor != 0) glowTone(Color(m.artColor)) else Color(cfg.progressGlowColorArgb)
     val glowColor by animateColorAsState(baseGlow, tween(450), label = "progressGlowColor")
-    val glow = if (cfg.progressGlowEnabled) ProgressGlow(glowColor, cfg.progressGlowIntensity, cfg.progressGlowTipOnly) else null
+    val glow = if (cfg.progressGlowEnabled) ProgressGlow(glowColor, cfg.progressGlowIntensity, cfg.progressGlowTipOnly, cfg.progressGlowInside) else null
 
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     var drag by remember { mutableStateOf<Float?>(null) }
@@ -243,7 +245,10 @@ private fun MusicProgress(m: IslandContent.Media, cfg: IslandSettings, onSeek: (
 }
 
 @Immutable
-private class ProgressGlow(val color: Color, val intensity: Float, val tipOnly: Boolean)
+private class ProgressGlow(val color: Color, val intensity: Float, val tipOnly: Boolean, val inside: Boolean) {
+    /** Uç modu her zaman, tüm çubuk modu ise "içinde kalsın" açıkken çubuğun içinde çizilir. */
+    val contained: Boolean get() = tipOnly || inside
+}
 
 /** Kapak rengini parıltı için canlı ve parlak bir tona çeker (koyu kapaklarda da görünür kalsın). */
 private fun glowTone(c: Color): Color {
@@ -254,28 +259,44 @@ private fun glowTone(c: Color): Color {
     return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
-/** Çubuğun dolu kısmının arkasına parıltı çizer: tüm çubuk boyunca ya da yalnızca ucunda. */
-private fun DrawScope.drawProgressGlow(g: ProgressGlow, fillW: Float, cy: Float, th: Float) {
+/** Tüm çubuk modu, taşmalı: dolu kısmın arkasına dışa yayılan yumuşak ışık çizer. */
+private fun DrawScope.drawOuterGlow(g: ProgressGlow, fillW: Float, cy: Float, th: Float) {
     val k = g.intensity.coerceIn(0f, 1f)
-    if (g.tipOnly) {
-        val r = 18.dp.toPx()
-        val center = Offset(fillW.coerceAtLeast(th / 2), cy)
-        val brush = Brush.radialGradient(
-            0f to g.color.copy(alpha = 0.90f * k),
-            0.35f to g.color.copy(alpha = 0.45f * k),
-            1f to g.color.copy(alpha = 0f),
-            center = center, radius = r,
+    // Üst üste binen yarı saydam katmanlar: ortası parlak, kenarlara doğru sönen yumuşak ışık
+    val layers = 7
+    for (i in layers downTo 1) {
+        val grow = 16.dp.toPx() * i / layers
+        val h = th + grow
+        drawRoundRect(
+            g.color.copy(alpha = 0.13f * k),
+            Offset(-grow / 2f, cy - h / 2f), Size(fillW + grow, h), CornerRadius(h / 2f),
         )
-        drawCircle(brush, radius = r, center = center)
-    } else {
-        // Üst üste binen yarı saydam katmanlar: ortası parlak, kenarlara doğru sönen yumuşak ışık
-        val layers = 7
-        for (i in layers downTo 1) {
-            val grow = 16.dp.toPx() * i / layers
-            val h = th + grow
+    }
+}
+
+/** Parıltıyı dolu çubuğun İÇİNDE çizer (dışarı taşmaz): uç modunda ucu renklenir, tüm çubuk modunda çubuk ışıldar. */
+private fun DrawScope.drawInnerGlow(g: ProgressGlow, fillW: Float, cy: Float, th: Float) {
+    val k = g.intensity.coerceIn(0f, 1f)
+    val top = cy - th / 2f
+    val clip = Path().apply { addRoundRect(RoundRect(0f, top, fillW, top + th, CornerRadius(th / 2f))) }
+    clipPath(clip) {
+        if (g.tipOnly) {
+            // Çubuğun son kısmı uca doğru parıltı rengine döner
+            val len = minOf(fillW, 40.dp.toPx())
+            val x0 = fillW - len
+            val brush = Brush.horizontalGradient(
+                0f to g.color.copy(alpha = 0f),
+                0.55f to g.color.copy(alpha = 0.50f * k),
+                1f to g.color.copy(alpha = 0.95f * k),
+                startX = x0, endX = fillW,
+            )
+            drawRect(brush, Offset(x0, top), Size(len, th))
+        } else {
+            // Neon tüp: kenarlar parıltı rengi, ortada parlak beyaz çekirdek
+            drawRect(g.color.copy(alpha = k), Offset(0f, top), Size(fillW, th))
             drawRoundRect(
-                g.color.copy(alpha = 0.13f * k),
-                Offset(-grow / 2f, cy - h / 2f), Size(fillW + grow, h), CornerRadius(h / 2f),
+                Color.White.copy(alpha = 0.88f),
+                Offset(0f, cy - th * 0.2f), Size(fillW, th * 0.4f), CornerRadius(th * 0.2f),
             )
         }
     }
@@ -310,8 +331,10 @@ private fun SeekBar(fraction: Float, enabled: Boolean, dragging: Boolean, glow: 
         val th = thick.dp.toPx()
         drawRoundRect(Color.White.copy(0.22f), Offset(0f, cy - th / 2), Size(size.width, th), CornerRadius(th / 2))
         val fillW = (size.width * fraction).coerceAtLeast(0f)
-        if (glow != null && fillW > 0f) drawProgressGlow(glow, fillW, cy, th)
+        val glowOn = glow != null && fillW > 0f
+        if (glowOn && !glow!!.contained) drawOuterGlow(glow, fillW, cy, th)
         drawRoundRect(Color.White, Offset(0f, cy - th / 2), Size(fillW, th), CornerRadius(th / 2))
+        if (glowOn && glow!!.contained) drawInnerGlow(glow, fillW, cy, th)
     }
 }
 

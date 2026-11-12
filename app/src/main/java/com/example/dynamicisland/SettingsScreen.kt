@@ -158,6 +158,13 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                     SegmentedTabs(listOf("Tüm çubuk", "Çubuğun ucu"), if (draft.progressGlowTipOnly) 1 else 0) {
                         draft = draft.copy(progressGlowTipOnly = it == 1)
                     }
+                    if (draft.progressGlowTipOnly) {
+                        Text("Uç parıltısı her zaman çubuğun içinde kalır, dışarı taşmaz.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+                    } else {
+                        SwitchRow("Parıltı çubuğun içinde kalsın", "Kapalıyken ışık çubuğun dışına yayılır; açıkken dışarı taşmaz",
+                            draft.progressGlowInside) { draft = draft.copy(progressGlowInside = it) }
+                    }
                     SliderRow("Yoğunluk", draft.progressGlowIntensity, 0.2f..1f, "%${(draft.progressGlowIntensity * 100).toInt()}") { draft = draft.copy(progressGlowIntensity = it) }
                     SectionDivider()
                     SwitchRow("Albüm kapağı rengi", "Parıltı, çalan şarkının kapağına göre değişir",
