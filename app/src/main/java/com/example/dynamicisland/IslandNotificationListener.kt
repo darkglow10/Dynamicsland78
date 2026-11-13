@@ -260,6 +260,6 @@ class IslandNotificationListener : NotificationListenerService() {
         val title = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()
         val text = ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
         if (title.isBlank() && text.isBlank()) return
-        IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text))
+        IslandBus.post(IslandEvent.Notification(sbn.packageName, title, text, n.contentIntent))
     }
 }

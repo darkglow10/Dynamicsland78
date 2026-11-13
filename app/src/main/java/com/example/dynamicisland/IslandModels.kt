@@ -24,6 +24,7 @@ sealed interface IslandContent {
     data class Notif(
         val pkg: String, val title: String, val text: String,
         val icon: ImageBitmap? = null,
+        val intent: android.app.PendingIntent? = null,   // bildirimin kendi hedefi (ilgili sohbet / ekran)
     ) : IslandContent
 
     data class Media(
@@ -67,7 +68,10 @@ sealed interface LyricsState {
 }
 
 sealed interface IslandEvent {
-    data class Notification(val pkg: String, val title: String, val text: String) : IslandEvent
+    data class Notification(
+        val pkg: String, val title: String, val text: String,
+        val intent: android.app.PendingIntent? = null,
+    ) : IslandEvent
     data class MediaChanged(val media: IslandContent.Media?) : IslandEvent
     data class AssistantChanged(val active: Boolean) : IslandEvent
 }

@@ -153,7 +153,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
             is IslandEvent.Notification -> if (!assistantActive) scope.launch {
                 val icon = iconFor(e.pkg)
-                showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon), holdMs = 4_000)
+                showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent), holdMs = 4_000)
             }
             is IslandEvent.MediaChanged -> onMedia(e.media)
         }
@@ -251,7 +251,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     update { it.copy(expanded = true) }
                     scheduleCollapse(8_000)
                 }
-            is IslandContent.Notif -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            is IslandContent.Notif -> {
+                val n = cur.content as IslandContent.Notif
+                if (settings.value.notifTapOpens) openNotification(n)
+                else { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            }
             is IslandContent.Favorites -> {
                 val now = android.os.SystemClock.elapsedRealtime()
                 if (!cur.expanded) {
@@ -337,16 +341,36 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (intent != null) runCatching { startActivity(intent) }
     }
 
-    private fun launchFavorite(pkg: String) {
-        // Ada önce açıktan kapalı hale geçer; animasyon bu geçişle birlikte başlar
+    /** Ada önce açıktan kapalı hale geçer; animasyon (açıksa) bu geçişle birlikte başlar, ekran kapanınca [open] çalışır. */
+    private fun launchWithAnim(animOn: Boolean, open: () -> Unit) {
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
-        if (!settings.value.favoriteLaunchAnim) { launchApp(pkg); return }
+        if (!animOn) { open(); return }
         if (launching) return
         launching = true
-        scope.launch { delay(LAUNCH_LEAD_MS); startLaunchTransition(pkg) }
+        scope.launch { delay(LAUNCH_LEAD_MS); startLaunchTransition(open) }
     }
 
-    private fun startLaunchTransition(pkg: String) {
+    private fun launchFavorite(pkg: String) =
+        launchWithAnim(settings.value.favoriteLaunchAnim) { launchApp(pkg) }
+
+    /** Bildirime dokununca: bildirimin kendi hedefi (ör. ilgili sohbet) açılır; yoksa uygulamanın ana ekranı. */
+    private fun openNotification(n: IslandContent.Notif) {
+        val open: () -> Unit = {
+            val pi = n.intent
+            val sent = pi != null && runCatching {
+                val opts = if (Build.VERSION.SDK_INT >= 34) {
+                    android.app.ActivityOptions.makeBasic()
+                        .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                        .toBundle()
+                } else null
+                pi.send(this, 0, null, null, null, null, opts)
+            }.isSuccess
+            if (!sent) launchApp(n.pkg)
+        }
+        launchWithAnim(settings.value.notifLaunchAnim, open)
+    }
+
+    private fun startLaunchTransition(open: () -> Unit) {
         val s = settings.value
         val sw = wm.currentWindowMetrics.bounds.width()
         val chPx = dp(s.compactHeightDp)
@@ -365,7 +389,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             setContent {
                 LaunchTransition(
                     spec,
-                    onCovered = { launchApp(pkg) },                       // ekran tamamen siyah: uygulamayı aç
+                    onCovered = { runCatching { open() } },                       // ekran tamamen siyah: uygulamayı aç
                     onFinished = { handler.post { if (launchView === view) removeLaunchView() } },
                 )
             }
@@ -400,7 +424,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (!added) {                        // pencere eklenemedi: animasyonsuz aç
             view.disposeComposition()
             launching = false
-            launchApp(pkg)
+            runCatching { open() }
             return
         }
         launchView = view; launchWm = host

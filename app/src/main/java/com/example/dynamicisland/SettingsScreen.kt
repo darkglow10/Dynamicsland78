@@ -149,6 +149,15 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
             FavoritesSection(draft) { draft = it }
 
+            SectionCard("Bildirimler", "Adada görünen bildirime dokununca") {
+                SwitchRow("Dokununca uygulamayı aç", "Bildirimin geldiği uygulama açılır (mümkünse ilgili sohbet / ekran)",
+                    draft.notifTapOpens) { draft = draft.copy(notifTapOpens = it) }
+                if (draft.notifTapOpens) {
+                    SwitchRow("Açılış animasyonu", "Adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır. Hız, Favori uygulamalar bölümündeki ayardan alınır",
+                        draft.notifLaunchAnim) { draft = draft.copy(notifLaunchAnim = it) }
+                }
+            }
+
             SectionCard("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {
                 SwitchRow("Asistan animasyonu", "Erişilebilirlik servisi açık olmalı", draft.assistantEnabled) { draft = draft.copy(assistantEnabled = it) }
                 if (draft.assistantEnabled) {
