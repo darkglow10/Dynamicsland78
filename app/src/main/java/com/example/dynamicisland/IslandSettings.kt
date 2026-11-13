@@ -78,8 +78,8 @@ data class IslandSettings(
 
     // Google Asistan / Gemini animasyonu
     val assistantEnabled: Boolean = true,
-    val assistantWidthDp: Float = 200f,
-    val assistantHeightDp: Float = 104f,
+    val assistantWidthDp: Float = 150f,
+    val assistantHeightDp: Float = 112f,
 
     // Gökkuşağı modu
     val rainbowEnabled: Boolean = false,

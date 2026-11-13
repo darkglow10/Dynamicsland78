@@ -46,15 +46,24 @@ class IslandAccessibilityService : AccessibilityService() {
         runCatching {
             val screenH = resources.displayMetrics.heightPixels
             val r = Rect()
-            var found = false
+            var imeVisible = false
+            var googleFull = false        // Google uygulamasının kendisi (tam ekran) açık mı
+            var smallSystem = false       // sistem türünde küçük Google penceresi (asistan çubuğu)
+            var smallApp = false          // uygulama türünde küçük Google penceresi (asistan çubuğu ya da metin seçim menüsü)
             for (w in windows) {
+                if (w.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD) imeVisible = true
                 val pkg = w.root?.packageName?.toString() ?: continue
                 if (pkg !in ASSISTANT_PKGS) continue
                 w.getBoundsInScreen(r)
-                val full = r.height() >= screenH * 0.85f
-                if (!full) found = true
-                if (found && !assistantOn) Log.d(TAG, "pencere: pkg=$pkg type=${w.type} bounds=$r")
+                val full = r.height() >= screenH * 0.60f
+                if (full) googleFull = true
+                else if (w.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM) smallSystem = true
+                else smallApp = true
+                if (!assistantOn) Log.d(TAG, "pencere: pkg=$pkg type=${w.type} full=$full bounds=$r ime=$imeVisible")
             }
+            // Google uygulamasında yazı yazarken / kelime seçerken (klavye açık ya da uygulama tam ekran) tetiklenmesin.
+            // Zaten açıksa klavye açılması (Gemini'a yazmak) animasyonu kapatmaz.
+            val found = (smallSystem || (smallApp && !googleFull)) && (assistantOn || !imeVisible)
             if (found != assistantOn) {
                 assistantOn = found
                 IslandBus.post(IslandEvent.AssistantChanged(found))
