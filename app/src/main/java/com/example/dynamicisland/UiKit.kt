@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -86,6 +87,14 @@ fun SectionDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outli
 @Composable
 fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (Boolean) -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val trackColor by animateColorAsState(
+        if (checked) Color(0xFF4CD964) else Color(0xFFE4E1DE), tween(200), label = "switchTrack",
+    )
+    // Düğme: 64 dp çubuk - 2x4 dp kenar boşluğu - 26 dp düğme = 30 dp yol
+    val knobX by animateDpAsState(
+        if (checked) 30.dp else 0.dp,
+        spring(dampingRatio = 0.75f, stiffness = Spring.StiffnessMedium), label = "switchKnob",
+    )
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
             .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
@@ -97,35 +106,52 @@ fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (
             Text(title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             if (desc != null) Text(desc, color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
-        Switch(
-            checked = checked, onCheckedChange = null,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = Color.White, checkedTrackColor = cs.primary, checkedBorderColor = cs.primary,
-                uncheckedThumbColor = cs.onSurfaceVariant, uncheckedTrackColor = cs.surfaceVariant,
-                uncheckedBorderColor = cs.outline,
-            ),
-        )
+        Box(
+            Modifier.width(64.dp).height(34.dp)
+                .clip(RoundedCornerShape(50))
+                .background(trackColor)
+                .padding(4.dp),
+        ) {
+            Box(
+                Modifier.offset(x = knobX).size(26.dp)
+                    .shadow(2.dp, CircleShape)          // gölge, arka plandan ÖNCE verilmeli
+                    .background(Color.White, CircleShape),
+            )
+        }
     }
 }
 
 @Composable
 fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, valueText: String, onChange: (Float) -> Unit) {
     val cs = MaterialTheme.colorScheme
+    val inactive = Color.White.copy(alpha = 0.22f)
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = cs.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.width(12.dp))
-            Text(
-                valueText, color = cs.onPrimaryContainer, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(cs.primaryContainer.copy(alpha = 0.7f))
-                    .padding(horizontal = 9.dp, vertical = 4.dp),
-            )
+            Text(valueText, color = cs.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
         Slider(
             value = value.coerceIn(range), onValueChange = onChange, valueRange = range,
+            modifier = Modifier.fillMaxWidth().height(28.dp),
             colors = SliderDefaults.colors(
-                thumbColor = Color.White, activeTrackColor = cs.primary, inactiveTrackColor = cs.surfaceVariant,
+                thumbColor = Color(0xFFD2BBA6),
+                activeTrackColor = Color.White,
+                inactiveTrackColor = inactive,
+                activeTickColor = Color.Transparent,
+                inactiveTickColor = Color.Transparent,
+                disabledThumbColor = Color(0xFFD2BBA6),
+                disabledActiveTrackColor = Color.White,
+                disabledInactiveTrackColor = inactive,
             ),
+            thumb = {
+                Box(
+                    Modifier.size(20.dp)
+                        .shadow(2.dp, CircleShape)
+                        .background(Color(0xFFD2BBA6), CircleShape)
+                        .border(3.dp, Color(0xFF5F4A3B), CircleShape),
+                )
+            },
         )
     }
 }
