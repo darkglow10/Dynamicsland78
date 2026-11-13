@@ -173,7 +173,16 @@ private fun Context.hasPostNotif() =
 @Composable
 private fun AppRoot() {
     val cs = MaterialTheme.colorScheme
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember { mutableIntStateOf(0) }       // çubuktaki seçim (anında değişir)
+    var shown by remember { mutableIntStateOf(0) }     // ekranda gösterilen sayfa (çubuk animasyonu bitince değişir)
+    // Ayarlar / Sözler sayfaları ağır; çubuk animasyonu ile aynı karede açılırsa takılıyor.
+    // Önce çubuk akıcı kayar, sayfa hemen ardından değişir.
+    LaunchedEffect(tab) {
+        if (shown != tab) {
+            delay(280)
+            shown = tab
+        }
+    }
     Box(Modifier.fillMaxSize().systemBarsPadding()) {
         Column(
             Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 12.dp),
@@ -185,7 +194,7 @@ private fun AppRoot() {
             }
             // Alttaki yüzen çubuğun altında kalmasın diye içeriğe alttan boşluk bırakılır
             Box(Modifier.weight(1f).padding(bottom = FloatingTabsHeight + 24.dp)) {
-                when (tab) {
+                when (shown) {
                     0 -> SetupScreen()
                     1 -> key(1) { SettingsScreen(lyricsPage = false) }
                     else -> key(2) { SettingsScreen(lyricsPage = true) }
