@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.core.app.NotificationManagerCompat
 
 /**
@@ -98,8 +99,11 @@ class IslandAccessibilityService : AccessibilityService() {
     private fun assistantVisible(): Boolean {
         val ws = runCatching { windows }.getOrNull()
         if (!ws.isNullOrEmpty()) {
+            // Yalnızca asistanın KAPLAMA penceresi sayılır (alttaki "Gemini'a sorun" barı). Google / Gemini uygulaması
+            // normal bir uygulama olarak açıldığında penceresi TYPE_APPLICATION olur ve sayılmaz.
             return ws.any { w ->
-                runCatching { w.root?.packageName?.toString()?.let { it in ASSISTANT_PKGS } == true }.getOrDefault(false)
+                w.type != AccessibilityWindowInfo.TYPE_APPLICATION &&
+                    runCatching { w.root?.packageName?.toString()?.let { it in ASSISTANT_PKGS } == true }.getOrDefault(false)
             }
         }
         return eventSaysOn
@@ -118,7 +122,8 @@ class IslandAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
                     val pkg = e.packageName?.toString()
                     if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
-                        if (pkg in ASSISTANT_PKGS) eventSaysOn = true
+                        // Yedek (pencere listesi yokken): ekran sınıfı bir Activity ise normal uygulama açılmıştır, asistan değil
+                        if (pkg in ASSISTANT_PKGS) eventSaysOn = e.className?.contains("Activity") != true
                         else if (pkg != packageName && pkg !in IGNORED_PKGS) eventSaysOn = false
                     }
                     // Olay yağmurunu tek kontrole indir
