@@ -27,6 +27,14 @@ sealed interface IslandContent {
         val intent: android.app.PendingIntent? = null,   // bildirimin kendi hedefi (ilgili sohbet / ekran)
     ) : IslandContent
 
+    /** Telefon araması: gelen (Cevapla / Reddet) ya da aktif (süre + Kapat). */
+    data class Call(
+        val name: String,
+        val isIncoming: Boolean,
+        val duration: String? = null,     // aktif aramada "0:01"
+        val avatar: ImageBitmap? = null,
+    ) : IslandContent
+
     data class Media(
         val title: String,
         val artist: String,
@@ -72,6 +80,13 @@ sealed interface IslandEvent {
         val pkg: String, val title: String, val text: String,
         val intent: android.app.PendingIntent? = null,
     ) : IslandEvent
+    /** Arama bildirimi (gelen ya da aktif). Cevapla / Reddet-Kapat düğmeleri bildirimin kendi PendingIntent'leridir. */
+    data class Call(
+        val key: String, val pkg: String, val name: String, val incoming: Boolean,
+        val startedAt: Long, val avatar: ImageBitmap?,
+        val answer: android.app.PendingIntent?, val decline: android.app.PendingIntent?,
+    ) : IslandEvent
+    data class CallEnded(val key: String) : IslandEvent
     data class MediaChanged(val media: IslandContent.Media?) : IslandEvent
     data class AssistantChanged(val active: Boolean) : IslandEvent
 }

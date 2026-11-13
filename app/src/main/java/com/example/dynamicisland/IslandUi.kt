@@ -11,7 +11,10 @@ import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -31,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
@@ -39,6 +43,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -112,6 +118,8 @@ fun IslandRoot(
     onOutput: () -> Unit,
     onLongPress: () -> Unit = {},
     onLaunch: (String) -> Unit = {},
+    onAnswer: () -> Unit = {},
+    onDecline: () -> Unit = {},
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
@@ -120,10 +128,11 @@ fun IslandRoot(
     val media = content as? IslandContent.Media
     // Açılırken animasyonu çok kısa geciktir: pencere önce büyüsün, animasyonun ilk (en hızlı) kareleri
     // küçük pencereye çizilip kırpılmasın ("yaylı" animasyonda açılışta takılma). Kapanış gecikmesizdir.
-    var animExpanded by remember { mutableStateOf(s.expanded) }
-    LaunchedEffect(s.expanded) {
-        if (s.expanded && cfg.animEnabled) delay(EXPAND_LEAD_MS)
-        animExpanded = s.expanded
+    val wantExpanded = s.expanded || content is IslandContent.Call   // arama varken ada her zaman açık
+    var animExpanded by remember { mutableStateOf(wantExpanded) }
+    LaunchedEffect(wantExpanded) {
+        if (wantExpanded && cfg.animEnabled) delay(EXPAND_LEAD_MS)
+        animExpanded = wantExpanded
     }
     val progress = rememberIslandProgress(cfg, animExpanded)
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
@@ -143,7 +152,8 @@ fun IslandRoot(
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch)
+            if (content is IslandContent.Call) geo = geo.copy(eh = if (content.isIncoming) 74.dp else 88.dp)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline)
         }
     }
 }
@@ -352,6 +362,8 @@ fun IslandPill(
     onOutput: () -> Unit,
     onLongPress: () -> Unit = {},
     onLaunch: (String) -> Unit = {},
+    onAnswer: () -> Unit = {},
+    onDecline: () -> Unit = {},
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
@@ -440,6 +452,7 @@ fun IslandPill(
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
+                    is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
@@ -579,6 +592,119 @@ private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle
                 Text(c.text, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp, lineHeight = 18.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Arama (gelen / aktif)
+private const val PHONE_PATH =
+    "M6.62,10.79c1.44,2.83 3.76,5.14 6.59,6.59l2.2,-2.2c0.27,-0.27 0.67,-0.36 1.02,-0.24 " +
+    "1.12,0.37 2.33,0.57 3.57,0.57 0.55,0 1,0.45 1,1V20c0,0.55 -0.45,1 -1,1 -9.39,0 -17,-7.61 -17,-17 " +
+    "0,-0.55 0.45,-1 1,-1h3.5c0.55,0 1,0.45 1,1 0,1.25 0.2,2.45 0.57,3.57 0.11,0.35 0.03,0.74 -0.25,1.02l-2.2,2.2z"
+
+private val PhonePath: Path by lazy { PathParser().parsePathString(PHONE_PATH).toPath() }
+
+private val CallGreen = Color(0xFF34C759)
+private val CallRed = Color(0xFFFF3B30)
+
+/** Telefon ahizesi simgesi. [rotation] 135 verilirse "kapat" simgesi olur. */
+@Composable
+private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val sc = size.width / 24f
+        withTransform({
+            rotate(rotation, Offset(size.width / 2f, size.height / 2f))
+            scale(sc, sc, Offset.Zero)
+        }) {
+            drawPath(PhonePath, Color.White)
+        }
+    }
+}
+
+@Composable
+private fun CallButton(color: Color, rotation: Float, size: Dp, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(color, CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        PhoneIcon(rotation, Modifier.size(size * 0.46f))
+    }
+}
+
+@Composable
+private fun CallContent(
+    c: IslandContent.Call,
+    accent: Color,
+    rb: RainbowStyle?,
+    onAnswer: () -> Unit,
+    onDecline: () -> Unit,
+) {
+    val incoming = c.isIncoming
+    val avatarSize = if (incoming) 52.dp else 48.dp
+    Row(
+        Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Avatar: fotoğraf varsa o, yoksa baş harf (gelen aramada renk geçişli, aktif aramada koyu gri)
+        val avatar = c.avatar
+        if (avatar != null) {
+            Image(
+                bitmap = avatar, contentDescription = null, contentScale = ContentScale.Crop,
+                modifier = Modifier.size(avatarSize).clip(CircleShape),
+            )
+        } else {
+            val bg = if (incoming) {
+                Modifier.background(
+                    Brush.linearGradient(listOf(Color(0xFFFF6B9D), Color(0xFFFF9A5A))), CircleShape,
+                )
+            } else {
+                Modifier.background(Color(0xFF3A3A3C), CircleShape)
+            }
+            Box(Modifier.size(avatarSize).then(bg), contentAlignment = Alignment.Center) {
+                Text(
+                    text = c.name.trim().take(1).uppercase().ifEmpty { "?" },
+                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                    modifier = Modifier.rainbowFill(rb, 0.dp),
+                )
+            }
+        }
+
+        // İsim + durum
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            if (incoming) {
+                Text(
+                    "Gelen arama", color = Color.White.copy(alpha = 0.60f), fontSize = 13.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
+                )
+            } else {
+                Text(
+                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
+                )
+                Text(
+                    c.duration ?: "Aktif arama", color = CallGreen, fontWeight = FontWeight.Medium,
+                    fontSize = 15.sp, maxLines = 1,
+                )
+            }
+        }
+
+        // Butonlar: kırmızı (reddet / kapat) + gelen aramada yeşil (cevapla)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            CallButton(CallRed, 135f, if (incoming) 46.dp else 48.dp, onDecline)
+            if (incoming) CallButton(CallGreen, 0f, 46.dp, onAnswer)
         }
     }
 }

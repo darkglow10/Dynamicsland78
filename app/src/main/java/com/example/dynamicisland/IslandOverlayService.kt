@@ -145,13 +145,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Media -> 2
         IslandContent.Assistant -> 3
         is IslandContent.Favorites -> 4
+        is IslandContent.Call -> if (c.isIncoming) 5 else 6
     }
 
     // ---------------------------------------------------------------- Olay mantığı
     private fun handle(e: IslandEvent) {
         when (e) {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
-            is IslandEvent.Notification -> if (!assistantActive) scope.launch {
+            is IslandEvent.Call -> onCall(e)
+            is IslandEvent.CallEnded -> onCallEnded(e.key)
+            is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
                 showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent), holdMs = 4_000)
             }
@@ -174,6 +177,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onAssistant(active: Boolean) {
         if (active == assistantActive) return
         if (active && !settings.value.assistantEnabled) return
+        if (active && callKey != null) return          // arama sürerken asistan animasyonu araya girmesin
         assistantActive = active
         collapseJob?.cancel()
         if (active) {
@@ -190,6 +194,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         ensureLyrics()
         val cur = ui.value
         when {
+            cur.content is IslandContent.Call -> update { it }          // arama sürerken müzik paneline geçme
             cur.content is IslandContent.Assistant -> update { it }
             cur.content is IslandContent.Notif -> update { it }
             cur.content is IslandContent.Favorites -> update { it }    // favori paneli açıkken müzik paneline geçme
@@ -274,8 +279,79 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (s.favoritesReady() && s.favoritesTrigger == 0) openFavorites()
             }
             IslandContent.Assistant -> Unit
+            is IslandContent.Call -> Unit      // düğmeler kendi dokunuşunu işler
         }
     }
+
+    // ---------------------------------------------------------------- Arama (gelen / aktif)
+    private var callKey: String? = null
+    private var callName = ""
+    private var callAvatar: ImageBitmap? = null
+    private var callIncoming = true
+    private var callSince = 0L
+    private var callAnswer: android.app.PendingIntent? = null
+    private var callDecline: android.app.PendingIntent? = null
+    private var callTickJob: Job? = null
+    private var callEndJob: Job? = null
+
+    private fun onCall(e: IslandEvent.Call) {
+        callEndJob?.cancel()
+        collapseJob?.cancel()
+        callKey = e.key
+        callName = e.name
+        callAvatar = e.avatar
+        callIncoming = e.incoming
+        callAnswer = e.answer
+        callDecline = e.decline
+        callTickJob?.cancel()
+        if (e.incoming) {
+            callSince = 0L
+        } else {
+            val now = System.currentTimeMillis()
+            if (callSince == 0L) callSince = e.startedAt.takeIf { it in 1..now } ?: now
+            callTickJob = scope.launch { while (true) { delay(1_000); publishCall() } }
+        }
+        publishCall()
+    }
+
+    private fun publishCall() {
+        val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
+        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar), expanded = true) }
+    }
+
+    private fun formatCallDuration(ms: Long): String {
+        val t = (ms / 1000).coerceAtLeast(0)
+        val h = t / 3600; val m = (t % 3600) / 60; val s = t % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+    }
+
+    /** Bildirim kalkınca adayı kapatır. Gelen -> aktif geçişinde bildirim değiştiği için kısa süre beklenir (titreme olmasın). */
+    private fun onCallEnded(key: String) {
+        if (key != callKey) return
+        callEndJob?.cancel()
+        callEndJob = scope.launch {
+            delay(600)
+            if (callKey != key) return@launch
+            callTickJob?.cancel()
+            callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
+            if (ui.value.content is IslandContent.Call) collapseAndRest()
+        }
+    }
+
+    private fun sendCallIntent(pi: android.app.PendingIntent?) {
+        if (pi == null) return
+        runCatching {
+            val opts = if (Build.VERSION.SDK_INT >= 34) {
+                android.app.ActivityOptions.makeBasic()
+                    .setPendingIntentBackgroundActivityStartMode(android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                    .toBundle()
+            } else null
+            pi.send(this, 0, null, null, null, null, opts)
+        }
+    }
+
+    private fun onCallAnswer() = sendCallIntent(callAnswer)
+    private fun onCallDecline() = sendCallIntent(callDecline)
 
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
     private fun onPillLongPress() {
@@ -538,6 +614,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     state = ui, settingsFlow = settings, lyricsFlow = lyrics,
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
+                    onAnswer = ::onCallAnswer, onDecline = ::onCallDecline,
                 )
             }
         }
@@ -710,6 +787,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val eh = dp(
             when {
                 assistant -> s.assistantHeightDp
+                k.kind == 5 -> 74f          // gelen arama
+                k.kind == 6 -> 88f          // aktif arama
                 k.kind == 4 -> s.favoritesHeightDp(favN)
                 else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
             }
@@ -899,6 +978,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
         lyricsJob?.cancel()
+        callTickJob?.cancel(); callEndJob?.cancel()
         runCatching { removeLaunchView() }
         detachOutside()
         collapseJob?.cancel()

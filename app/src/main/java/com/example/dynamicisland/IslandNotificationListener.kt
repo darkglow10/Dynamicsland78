@@ -13,6 +13,7 @@ import android.os.SystemClock
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -249,8 +250,54 @@ class IslandNotificationListener : NotificationListenerService() {
         runCatching { handleNotification(sbn) }
     }
 
+    // ---------------------------------------------------------------- Arama bildirimleri
+    private val answerWords = listOf("cevapla", "yanıtla", "yanitla", "kabul", "answer", "accept", "pick up")
+    private val declineWords = listOf("reddet", "decline", "reject", "kapat", "hang up", "hangup", "end call", "sonlan", "bitir")
+
+    private fun handleCall(sbn: StatusBarNotification) {
+        val n = sbn.notification
+        val ex = n.extras
+        val name = ex.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.takeIf { it.isNotBlank() }
+            ?: ex.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty()
+        val acts = n.actions?.filter { it.actionIntent != null } ?: emptyList()
+        // Android 12+ CallStyle: 1 = gelen, 2 = aktif, 3 = filtreleme (gelen gibi gösterilir)
+        val type = ex.getInt("android.callType", 0)
+        val incoming = when (type) {
+            1, 3 -> true
+            2 -> false
+            else -> n.fullScreenIntent != null ||
+                (!ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER) && acts.size >= 2)
+        }
+        fun pick(words: List<String>) = acts.firstOrNull { a ->
+            val t = a.title?.toString()?.lowercase().orEmpty()
+            words.any { t.contains(it) }
+        }?.actionIntent
+        var decline = pick(declineWords)
+        var answer = if (incoming) pick(answerWords) else null
+        // Düğme adları tanınmazsa sıraya bak: önce Reddet, sonra Cevapla
+        val rest = acts.map { it.actionIntent }.filter { it !== decline && it !== answer }
+        if (decline == null) decline = rest.firstOrNull()
+        if (incoming && answer == null) answer = rest.firstOrNull { it !== decline }
+        val avatar = runCatching {
+            n.getLargeIcon()?.loadDrawable(this)?.toBitmap(128, 128)?.asImageBitmap()
+        }.getOrNull()
+        val started = if (!incoming && ex.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER)) n.`when` else 0L
+        IslandBus.post(IslandEvent.Call(sbn.key, sbn.packageName, name, incoming, started, avatar, answer, decline))
+    }
+
+    override fun onNotificationRemoved(sbn: StatusBarNotification) {
+        if (sbn.notification?.category == Notification.CATEGORY_CALL) {
+            IslandBus.post(IslandEvent.CallEnded(sbn.key))
+        }
+    }
+
     private fun handleNotification(sbn: StatusBarNotification) {
         val n = sbn.notification
+        // Arama bildirimleri (gelen / aktif) ayrı yoldan gider; "devam eden" filtresine takılmaz
+        if (sbn.packageName != packageName && n.category == Notification.CATEGORY_CALL) {
+            handleCall(sbn)
+            return
+        }
         if (sbn.packageName == packageName || sbn.isOngoing ||
             n.flags and Notification.FLAG_GROUP_SUMMARY != 0 ||
             n.category == Notification.CATEGORY_TRANSPORT ||
