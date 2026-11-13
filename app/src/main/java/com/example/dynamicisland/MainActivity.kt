@@ -18,6 +18,16 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -164,20 +174,114 @@ private fun Context.hasPostNotif() =
 private fun AppRoot() {
     val cs = MaterialTheme.colorScheme
     var tab by remember { mutableIntStateOf(0) }
-    Column(
-        Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Dynamic Island", color = cs.onBackground, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
-            Text("Kamera çevresinde canlı ada", color = cs.onSurfaceVariant, fontSize = 13.sp)
+    Box(Modifier.fillMaxSize().systemBarsPadding()) {
+        Column(
+            Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Column(Modifier.padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Dynamic Island", color = cs.onBackground, fontSize = 26.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.5).sp)
+                Text("Kamera çevresinde canlı ada", color = cs.onSurfaceVariant, fontSize = 13.sp)
+            }
+            // Alttaki yüzen çubuğun altında kalmasın diye içeriğe alttan boşluk bırakılır
+            Box(Modifier.weight(1f).padding(bottom = FloatingTabsHeight + 24.dp)) {
+                when (tab) {
+                    0 -> SetupScreen()
+                    1 -> key(1) { SettingsScreen(lyricsPage = false) }
+                    else -> key(2) { SettingsScreen(lyricsPage = true) }
+                }
+            }
         }
-        SegmentedTabs(listOf("Kurulum", "Ayarlar", "Sözler"), tab) { tab = it }
-        Box(Modifier.weight(1f)) {
-            when (tab) {
-                0 -> SetupScreen()
-                1 -> key(1) { SettingsScreen(lyricsPage = false) }
-                else -> key(2) { SettingsScreen(lyricsPage = true) }
+        BottomFloatingTabs(
+            labels = listOf("Kurulum", "Ayarlar", "Sözler"),
+            glyphs = listOf("◉", "Aa", "≡"),
+            selected = tab,
+            onSelect = { tab = it },
+            modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+        )
+    }
+}
+
+private val FloatingTabsHeight = 68.dp
+
+/**
+ * Altta yüzen sekme çubuğu.
+ * - Dokununca o sekmeye geçer.
+ * - Parmağı çubuk üzerinde sağa/sola sürükleyince seçici parmağı takip eder, bırakınca o sekme açılır.
+ * - Basılı tutulan sekme hafifçe büyür.
+ */
+@Composable
+private fun BottomFloatingTabs(
+    labels: List<String>,
+    glyphs: List<String>,
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val cs = MaterialTheme.colorScheme
+    val barShape = RoundedCornerShape(32.dp)
+    val pillShape = RoundedCornerShape(26.dp)
+    val count = labels.size.coerceAtLeast(1)
+    var held by remember { mutableIntStateOf(-1) }       // parmağın altındaki sekme (-1 = yok)
+    val target = if (held >= 0) held else selected.coerceIn(0, count - 1)
+
+    BoxWithConstraints(
+        modifier
+            .fillMaxWidth()
+            .height(FloatingTabsHeight)
+            .clip(barShape)
+            .background(cs.surface.copy(alpha = 0.94f))
+            .border(1.dp, cs.outlineVariant, barShape)
+            .pointerInput(count) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    fun indexAt(x: Float) = ((x / size.width) * count).toInt().coerceIn(0, count - 1)
+                    held = indexAt(down.position.x)
+                    do {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        held = indexAt(change.position.x)
+                        change.consume()
+                    } while (event.changes.any { it.pressed })
+                    val finalIndex = held
+                    held = -1
+                    if (finalIndex >= 0) onSelect(finalIndex)
+                }
+            }
+            .padding(6.dp),
+    ) {
+        val segW = maxWidth / count
+        val x by animateDpAsState(
+            segW * target,
+            spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow), label = "floatTabX",
+        )
+        val pillScale by animateFloatAsState(
+            if (held >= 0) 1.07f else 1f,
+            spring(dampingRatio = 0.7f, stiffness = 500f), label = "floatTabScale",
+        )
+        // Kayan seçici
+        Box(
+            Modifier.offset(x = x).width(segW).fillMaxHeight()
+                .graphicsLayer { scaleX = pillScale; scaleY = pillScale }
+                .clip(pillShape).background(cs.primaryContainer),
+        )
+        Row(Modifier.fillMaxSize()) {
+            labels.forEachIndexed { i, label ->
+                val sel = i == target
+                val fg by animateColorAsState(if (sel) cs.onPrimaryContainer else cs.onSurfaceVariant, tween(200), label = "floatTabFg$i")
+                val itemScale by animateFloatAsState(
+                    if (sel && held >= 0) 1.1f else 1f,
+                    spring(dampingRatio = 0.7f, stiffness = 500f), label = "floatItemScale$i",
+                )
+                Column(
+                    Modifier.weight(1f).fillMaxHeight()
+                        .graphicsLayer { scaleX = itemScale; scaleY = itemScale },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Text(glyphs.getOrElse(i) { "•" }, color = fg, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp)
+                    Text(label, color = fg, fontSize = 11.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium)
+                }
             }
         }
     }
