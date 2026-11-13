@@ -10,19 +10,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    
-    <!-- Gelen Arama Özelliği İçin Gerekli İzinler -->
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
-    <uses-permission android:name="android.permission.READ_CONTACTS" />
-
+    <!-- Yalnızca adb ile verilirse: erişilebilirlik servisi çökünce uygulama kendini onarır -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
     <application
         android:name=".DynamicIslandApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
+android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Dynamic Island"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
