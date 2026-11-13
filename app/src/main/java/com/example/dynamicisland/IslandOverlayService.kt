@@ -300,7 +300,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (!s.favoritesReady()) return
         val pkgs = s.favoritePkgList()
         favCache.keys.retainAll(pkgs.toSet())
-        val missing = pkgs.filter { it !in favCache }
+        val missing = pkgs.filter { !favCache.containsKey(it) }
         if (missing.isEmpty()) return
         scope.launch(Dispatchers.Default) { missing.forEach { favApp(it) } }
     }
