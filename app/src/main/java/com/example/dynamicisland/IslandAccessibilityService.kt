@@ -104,11 +104,10 @@ class IslandAccessibilityService : AccessibilityService() {
     private fun isAssist(p: String?) = p != null && p in ASSISTANT_PKGS
 
     /**
-     * Ekranda asistan barı var mı? Google / Gemini penceresi şu durumlarda "bar" sayılır:
-     *  - uygulama türünde değilse (sistem / kaplama penceresi), ya da
-     *  - ekranı tamamen kaplamıyorsa (alttaki bar), ya da
-     *  - altında başka bir uygulama penceresi (ana ekran, açık uygulama) görünüyorsa.
-     * Google / Gemini uygulaması tek başına tam ekran açıldığında bunların hiçbiri sağlanmaz.
+     * Gemini / Asistan barı = olay sınıfı "Floaty" (FloatyActivity) olan pencere. Normal Google uygulaması
+     * GoogleAppActivity ile açıldığı için bar sayılmaz. Pencere boyutuna bakılmaz (navigasyon çubuğu,
+     * tam ekran şeffaf pencere gibi cihaz farkları yüzünden güvenilmez).
+     * Bar açıkken pencere listesinden Google penceresi kaybolduysa bar kapanmış demektir.
      */
     private fun assistantVisible(): Boolean {
         val ws = runCatching { windows }.getOrNull()
@@ -119,24 +118,26 @@ class IslandAccessibilityService : AccessibilityService() {
             runCatching { w.getBoundsInScreen(r) }
             Win(w, runCatching { w.root?.packageName?.toString() }.getOrNull(), r)
         }
-        val assist = infos.filter { isAssist(it.pkg) }
-        if (assist.isEmpty()) return false
+        val hasAssistWindow = infos.any { isAssist(it.pkg) }
+        // Paket adı okunamayan bir pencere varsa (bar odaksız olabilir) olay bilgisine güven
+        val hasUnknownWindow = infos.any { it.pkg == null && it.w.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY }
+        val result = eventSaysOn && (hasAssistWindow || hasUnknownWindow)
+        if (eventSaysOn && !result) eventSaysOn = false
 
-        val otherApps = infos.count {
-            it.pkg != null && !isAssist(it.pkg) && it.pkg !in IGNORED_PKGS && it.pkg != packageName &&
-                it.w.type == AccessibilityWindowInfo.TYPE_APPLICATION
-        }
-        fun partial(i: Win) = i.r.width() < dm.widthPixels * 0.95f || i.r.height() < dm.heightPixels * 0.95f
-        val result = assist.any {
-            it.w.type != AccessibilityWindowInfo.TYPE_APPLICATION || partial(it) || otherApps > 0
-        }
-
-        lastDump = buildString {
-            appendLine("ekran=${dm.widthPixels}x${dm.heightPixels} sonuç=$result digerUygulama=$otherApps")
-            infos.forEach { appendLine("tür=${it.w.type} pkg=${it.pkg} başlık=${it.w.title} sınır=${it.r.flattenToString()} katman=${it.w.layer}") }
-            if (evLog.isNotEmpty()) appendLine("olaylar: " + evLog.joinToString(" | "))
+        if (hasAssistWindow || result) {
+            lastDump = buildString {
+                appendLine("ekran=${dm.widthPixels}x${dm.heightPixels} sonuç=$result bayrak=$eventSaysOn")
+                infos.forEach { appendLine("tür=${it.w.type} pkg=${it.pkg} başlık=${it.w.title} sınır=${it.r.flattenToString()} katman=${it.w.layer}") }
+                if (evLog.isNotEmpty()) appendLine("olaylar: " + evLog.joinToString(" | "))
+            }
         }
         return result
+    }
+
+    /** Gemini / Asistan barını açan ekran sınıfı mı? */
+    private fun isBarClass(cls: String?): Boolean {
+        val c = cls?.lowercase() ?: return false
+        return "floaty" in c || "robin" in c || "invocation" in c || "assistantoverlay" in c
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -155,8 +156,7 @@ class IslandAccessibilityService : AccessibilityService() {
                         if (isAssist(pkg)) {
                             evLog.addLast("$pkg ${e.className}")
                             while (evLog.size > 6) evLog.removeFirst()
-                            // Yedek (pencere listesi yokken): ekran sınıfı bir Activity ise normal uygulama açılmıştır
-                            eventSaysOn = e.className?.contains("Activity") != true
+                            eventSaysOn = isBarClass(e.className?.toString())
                         } else if (pkg != packageName && pkg !in IGNORED_PKGS) eventSaysOn = false
                     }
                     // Olay yağmurunu tek kontrole indir
