@@ -89,6 +89,8 @@ fun AssistantOrb() {
     val path = remember { Path() }
     val yc = remember { FloatArray(STEPS + 1) }
     val th = remember { FloatArray(STEPS + 1) }
+    val y2 = remember { FloatArray(STEPS + 1) }
+    val th2 = remember { FloatArray(STEPS + 1) }
 
     Canvas(Modifier.fillMaxSize()) {
         val w = size.width; val h = size.height
@@ -100,8 +102,8 @@ fun AssistantOrb() {
         val pi = PI.toFloat()
 
         val cy = h * 0.60f
-        val x0 = w * 0.05f
-        val span = w * 0.90f
+        val x0 = w * 0.03f
+        val span = w * 0.94f
 
         // 1) Alt kenarda mat gri geçiş (cam yansıması)
         drawRect(
@@ -118,7 +120,7 @@ fun AssistantOrb() {
             yc[i] = cy + tilt +
                 env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
                 env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
-            th[i] = h * 0.085f * b * (0.55f + 0.5f * sin(tau * (u * 1.7f + p))) * env
+            th[i] = h * 0.145f * b * (0.65f + 0.4f * sin(tau * (u * 1.7f + p))) * env
         }
         val cols = List(SAMPLES) { k ->
             val s = k / (SAMPLES - 1).toFloat()
@@ -126,8 +128,8 @@ fun AssistantOrb() {
             siriColor(s * 0.85f + hp, a)
         }
         val ribbon = Brush.horizontalGradient(cols, startX = x0, endX = x0 + span)
-        val scales = floatArrayOf(2.6f, 1.7f, 1.0f, 0.45f)
-        val alphas = floatArrayOf(0.12f, 0.20f, 0.38f, 0.95f)
+        val scales = floatArrayOf(1.9f, 1.4f, 1.0f, 0.6f)
+        val alphas = floatArrayOf(0.16f, 0.26f, 0.46f, 0.95f)
         scales.forEachIndexed { li, sc ->
             path.reset()
             for (i in 0..STEPS) {
@@ -158,12 +160,10 @@ fun AssistantOrb() {
             blendMode = BlendMode.Plus,
         )
 
-        // 4) Altında gümüş-gri ince ikinci dalga (ters yönde akar)
+        // 4) Ana bandın yansıması: aynı dalga ve kalınlıktan türetilir, bu yüzden birebir senkron hareket eder
         for (i in 0..STEPS) {
-            val u = i / STEPS.toFloat()
-            val env = sin(pi * u).coerceAtLeast(0f).pow(0.8f)
-            yc[i] = cy + h * 0.10f + env * h * 0.045f * sin(tau * (u * 1.5f + p) + 0.9f)
-            th[i] = h * 0.030f * (0.6f + 0.5f * sin(tau * (u * 2.0f - p))) * env
+            y2[i] = yc[i] + th[i] * 0.5f + h * 0.03f
+            th2[i] = th[i] * 0.22f
         }
         val silver = Brush.horizontalGradient(
             0f to Color(0x00DADDE4), 0.25f to Color(0xFFC9CDD6), 0.5f to Color(0xFFFFFFFF),
@@ -173,10 +173,10 @@ fun AssistantOrb() {
             path.reset()
             for (i in 0..STEPS) {
                 val x = x0 + span * i / STEPS
-                val y = yc[i] - th[i] * sc / 2f
+                val y = y2[i] - th2[i] * sc / 2f
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            for (i in STEPS downTo 0) path.lineTo(x0 + span * i / STEPS, yc[i] + th[i] * sc / 2f)
+            for (i in STEPS downTo 0) path.lineTo(x0 + span * i / STEPS, y2[i] + th2[i] * sc / 2f)
             path.close()
             drawPath(path, silver, alpha = floatArrayOf(0.10f, 0.22f, 0.45f)[li], blendMode = BlendMode.Plus)
         }
