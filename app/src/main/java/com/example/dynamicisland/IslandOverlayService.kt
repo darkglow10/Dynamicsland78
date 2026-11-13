@@ -123,7 +123,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
-        scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s) } }
+        scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s); preloadFavorites(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
@@ -252,7 +252,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     scheduleCollapse(8_000)
                 }
             is IslandContent.Notif -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
-            is IslandContent.Favorites -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            is IslandContent.Favorites -> {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (!cur.expanded) {
+                    // Panel kapanırken tekrar dokunuldu: kapanmasını bekletmeden yeniden aç
+                    collapseJob?.cancel()
+                    favOpenedAt = now
+                    update { it.copy(expanded = true) }
+                    scheduleCollapse(7_000)
+                } else if (now - favOpenedAt > FAV_CLOSE_GUARD_MS) {
+                    collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+                }
+                // Açıldıktan hemen sonra gelen hızlı dokunuşlar paneli kapatmaz
+            }
             IslandContent.Idle -> {
                 val s = settings.value
                 if (s.favoritesReady() && s.favoritesTrigger == 0) openFavorites()
@@ -273,6 +285,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Favori uygulamalar
     private val favCache = java.util.concurrent.ConcurrentHashMap<String, FavApp>()
+    private var favOpenedAt = 0L
+    private val FAV_CLOSE_GUARD_MS = 450L      // açılır açılmaz gelen hızlı dokunuşlar paneli kapatmasın
 
     private fun favApp(pkg: String): FavApp? = favCache[pkg] ?: runCatching {
         val pm = packageManager
@@ -281,17 +295,34 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         FavApp(pkg, label, icon)
     }.getOrNull()?.also { favCache[pkg] = it }
 
+    /** Favori uygulamaların simgelerini önceden yükler: ilk açılışta bekleme / takılma olmasın. */
+    private fun preloadFavorites(s: IslandSettings) {
+        if (!s.favoritesReady()) return
+        val pkgs = s.favoritePkgList()
+        favCache.keys.retainAll(pkgs.toSet())
+        val missing = pkgs.filter { it !in favCache }
+        if (missing.isEmpty()) return
+        scope.launch(Dispatchers.Default) { missing.forEach { favApp(it) } }
+    }
+
     private fun openFavorites() {
         val s = settings.value
         if (!s.favoritesReady()) return
-        scope.launch {
-            val apps = withContext(Dispatchers.Default) { s.favoritePkgList().mapNotNull { favApp(it) } }
-            if (apps.isEmpty()) return@launch
-            // Yüklenirken müzik/bildirim/asistan geldiyse favorileri açma
-            if (ui.value.content !is IslandContent.Idle) return@launch
-            update { IslandUiState(IslandContent.Favorites(apps), expanded = true) }
-            scheduleCollapse(7_000)
+        val pkgs = s.favoritePkgList()
+        val cached = pkgs.mapNotNull { favCache[it] }
+        if (cached.size == pkgs.size) {          // hepsi hazır: anında aç
+            showFavorites(cached)
+            return
         }
+        scope.launch { showFavorites(withContext(Dispatchers.Default) { pkgs.mapNotNull { favApp(it) } }) }
+    }
+
+    private fun showFavorites(apps: List<FavApp>) {
+        // Yüklenirken müzik/bildirim/asistan geldiyse favorileri açma
+        if (apps.isEmpty() || ui.value.content !is IslandContent.Idle) return
+        favOpenedAt = android.os.SystemClock.elapsedRealtime()
+        update { IslandUiState(IslandContent.Favorites(apps), expanded = true) }
+        scheduleCollapse(7_000)
     }
 
     private fun launchFavorite(pkg: String) {

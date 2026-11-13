@@ -14,7 +14,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -393,7 +394,31 @@ fun IslandPill(
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
             .islandSurface(cfg, body, shape, cornerT)
             .pointerInput(Unit) {
-                detectTapGestures(onTap = { tapNow() }, onLongPress = { longPressNow() })
+                // Dokunma + basılı tutma. Ada küçük olduğu için hızlı dokunuşta parmak kenardan kayıp çıkabiliyordu
+                // ve standart algılayıcı bunu iptal ediyordu; burada parmak ada dışına çıksa da ~40 dp'ye kadar
+                // dokunuş sayılır. Daha fazla sürüklenirse iptal edilir.
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val slop = 40.dp.toPx()
+                    var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal
+                    withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            if (change == null || change.isConsumed) { outcome = 2; break }
+                            if (!change.pressed) { outcome = 1; break }
+                            if ((change.position - down.position).getDistance() > slop) { outcome = 2; break }
+                        }
+                    }
+                    when (outcome) {
+                        0 -> {
+                            longPressNow()
+                            do {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            } while (c != null && c.pressed)
+                        }
+                        1 -> tapNow()
+                    }
+                }
             },
         contentAlignment = Alignment.TopCenter,
     ) {
