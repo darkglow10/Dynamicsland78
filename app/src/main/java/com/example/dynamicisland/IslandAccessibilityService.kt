@@ -38,37 +38,35 @@ class IslandAccessibilityService : AccessibilityService() {
     private val checkRunnable = Runnable { checkAssistant() }
 
     /**
-     * Ekranda Google uygulamasına ait, tam ekran OLMAYAN bir pencere varsa asistan/Gemini çubuğu açıktır.
-     * (Tam ekran Google uygulaması ya da Discover asistan sayılmaz.) Pencere bilgisi için
-     * erişilebilirlik yapılandırmasında canRetrieveWindowContent ve flagRetrieveInteractiveWindows gerekir.
+     * Ekranda Google / Gemini uygulamasına ait, TAM EKRAN OLMAYAN bir pencere varsa asistan çubuğu açıktır.
+     * Google uygulamasında yazı yazarken ya da kelime seçerken (klavye açıkken) çıkan küçük pencereler
+     * (seçim menüsü, tutamaçlar) yüzünden tetiklenmesin diye, klavye açıkken YENİ başlatma yapılmaz.
+     * Asistan zaten açıksa klavye açılması (Gemini'ye yazmak) animasyonu kapatmaz.
+     * Pencere bilgisi için erişilebilirlik yapılandırmasında canRetrieveWindowContent ve
+     * flagRetrieveInteractiveWindows gerekir.
      */
     private fun checkAssistant() {
         runCatching {
             val screenH = resources.displayMetrics.heightPixels
             val r = Rect()
             var imeVisible = false
-            var googleFull = false        // Google uygulamasının kendisi (tam ekran) açık mı
-            var smallSystem = false       // sistem türünde küçük Google penceresi (asistan çubuğu)
-            var smallApp = false          // uygulama türünde küçük Google penceresi (asistan çubuğu ya da metin seçim menüsü)
+            var small = false
             for (w in windows) {
                 if (w.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD) imeVisible = true
                 val pkg = w.root?.packageName?.toString() ?: continue
                 if (pkg !in ASSISTANT_PKGS) continue
                 w.getBoundsInScreen(r)
-                val full = r.height() >= screenH * 0.60f
-                if (full) googleFull = true
-                else if (w.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_SYSTEM) smallSystem = true
-                else smallApp = true
+                val full = r.height() >= screenH * 0.85f
+                if (!full) small = true
                 if (!assistantOn) Log.d(TAG, "pencere: pkg=$pkg type=${w.type} full=$full bounds=$r ime=$imeVisible")
             }
-            // Google uygulamasında yazı yazarken / kelime seçerken (klavye açık ya da uygulama tam ekran) tetiklenmesin.
-            // Zaten açıksa klavye açılması (Gemini'a yazmak) animasyonu kapatmaz.
-            val found = (smallSystem || (smallApp && !googleFull)) && (assistantOn || !imeVisible)
+            val found = small && (assistantOn || !imeVisible)
             if (found != assistantOn) {
+                Log.d(TAG, "asistan=$found")
                 assistantOn = found
                 IslandBus.post(IslandEvent.AssistantChanged(found))
             }
-        }
+        }.onFailure { Log.e(TAG, "checkAssistant hata", it) }
     }
 
     private fun scheduleCheck() {
