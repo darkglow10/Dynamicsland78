@@ -340,8 +340,7 @@ private fun SetupScreen() {
                     Text("Son çökme kaydı:\n" + it.take(900), color = Color(0xFFFF6B5E), fontSize = 11.sp, lineHeight = 15.sp)
                 }
                 if (winDump.isNotEmpty()) {
-                    Text("Son asistan penceresi kaydı:
-" + winDump.take(900), color = cs2.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
+                    Text("Son asistan penceresi kaydı:\n" + winDump.take(900), color = cs2.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
                 }
                 IslandActionButton("Tanılamayı kopyala", {
                     copyText(ctx, "diag", buildString {
