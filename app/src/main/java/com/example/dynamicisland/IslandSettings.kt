@@ -15,6 +15,9 @@ import kotlin.math.ceil
 
 const val GLOW_PAD_DP = 14f     // parıltı için pencere kenar boşluğu
 const val BOUNCE_PAD_DP = 16f   // "Zıplamalı" animasyonun taşma payı
+const val FAV_COLUMNS = 4       // favori panelinde bir satırdaki uygulama sayısı
+const val FAV_ROW_DP = 78f      // favori panelinde bir satırın yüksekliği
+const val MAX_FAV = 8           // en fazla seçilebilecek favori uygulama
 
 @Immutable
 data class IslandSettings(
@@ -76,6 +79,11 @@ data class IslandSettings(
     // Görünürlük
     val showIdle: Boolean = false,           // müzik/bildirim yokken de ada görünsün
 
+    // Favori uygulamalar (boştayken ada genişleyip seçilen uygulamaları gösterir)
+    val favoritesEnabled: Boolean = false,
+    val favoritesTrigger: Int = 0,           // 0 = dokununca, 1 = basılı tutunca
+    val favoritePkgs: String = "",           // paket adları, virgülle ayrılmış (sıra korunur)
+
     // Google Asistan / Gemini animasyonu
     val assistantEnabled: Boolean = true,
     val assistantWidthDp: Float = 150f,
@@ -119,6 +127,18 @@ data class IslandSettings(
         if (glowEnabled) GLOW_PAD_DP else 0f,
         if (animEnabled && animStyle == 3) BOUNCE_PAD_DP else 0f,
     )
+
+    /** Seçili favori uygulamaların paket adları (en fazla [MAX_FAV], tekrarsız). */
+    fun favoritePkgList(): List<String> = favoritePkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_FAV)
+
+    /** Özellik gerçekten çalışabilir mi: açık, ada boştayken görünür ve en az bir uygulama seçili. */
+    fun favoritesReady(): Boolean = favoritesEnabled && showIdle && favoritePkgList().isNotEmpty()
+
+    /** Favori panelinin yüksekliği: kamera bölgesi + uygulama satırları. */
+    fun favoritesHeightDp(count: Int): Float {
+        val rows = maxOf(1, ceil(count / FAV_COLUMNS.toFloat()).toInt())
+        return compactHeightDp + 6f + rows * FAV_ROW_DP + 8f
+    }
 
     /** Geçiş animasyonunun yaklaşık bitiş süresi (pencere boyutunu ona göre değiştiririz). */
     fun settleMs(): Long = if (!animEnabled) 60L else when (animStyle) {
@@ -173,6 +193,7 @@ class SettingsRepository(context: Context) {
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
         val IDLE = booleanPreferencesKey("idle")
+        val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
 
@@ -233,6 +254,9 @@ class SettingsRepository(context: Context) {
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
             showIdle = p[K.IDLE] ?: d.showIdle,
+            favoritesEnabled = p[K.FAV_ON] ?: d.favoritesEnabled,
+            favoritesTrigger = p[K.FAV_TRIG] ?: d.favoritesTrigger,
+            favoritePkgs = p[K.FAV_PKGS] ?: d.favoritePkgs,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
             assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
@@ -286,6 +310,7 @@ class SettingsRepository(context: Context) {
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
             it[K.IDLE] = s.showIdle
+            it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
             it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha
             it[K.LY_ON] = s.lyricsEnabled; it[K.LY_PANEL] = s.lyricsInPanel

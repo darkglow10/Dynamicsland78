@@ -7,12 +7,19 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
+/** Favori paneldeki bir uygulama (simge önceden yüklenir; panelde disk/PackageManager erişimi olmaz). */
+@Immutable
+data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
+
 @Immutable
 sealed interface IslandContent {
     data object Idle : IslandContent
 
     /** Google Asistan / Gemini açıkken: ada Siri benzeri renkli animasyona dönüşür. */
     data object Assistant : IslandContent
+
+    /** Boştayken adaya dokununca/basılı tutunca açılan favori uygulamalar paneli. */
+    data class Favorites(val apps: List<FavApp>) : IslandContent
 
     data class Notif(
         val pkg: String, val title: String, val text: String,

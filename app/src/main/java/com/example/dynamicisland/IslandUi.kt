@@ -14,8 +14,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.max
@@ -109,6 +109,8 @@ fun IslandRoot(
     onTap: () -> Unit,
     onCommand: (MediaCommand) -> Unit,
     onOutput: () -> Unit,
+    onLongPress: () -> Unit = {},
+    onLaunch: (String) -> Unit = {},
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
@@ -139,7 +141,8 @@ fun IslandRoot(
             val cw by animateDpAsState(compactWidthFor(cfg, s.compactLyrics && music).dp, cwSpec, label = "cw")
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput)
+            if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch)
         }
     }
 }
@@ -346,7 +349,12 @@ fun IslandPill(
     onTap: () -> Unit,
     onCommand: (MediaCommand) -> Unit,
     onOutput: () -> Unit,
+    onLongPress: () -> Unit = {},
+    onLaunch: (String) -> Unit = {},
 ) {
+    // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
+    val tapNow by rememberUpdatedState(onTap)
+    val longPressNow by rememberUpdatedState(onLongPress)
     // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
     val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
@@ -384,7 +392,9 @@ fun IslandPill(
             }
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
             .islandSurface(cfg, body, shape, cornerT)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap),
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { tapNow() }, onLongPress = { longPressNow() })
+            },
         contentAlignment = Alignment.TopCenter,
     ) {
         // Albüm kapağı arka planı: ada içini kaplar, yazıların okunması için hafif karartılır
@@ -407,6 +417,7 @@ fun IslandPill(
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
                     IslandContent.Assistant -> AssistantOrb()
+                    is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
                     IslandContent.Idle -> Unit
                 }
             }

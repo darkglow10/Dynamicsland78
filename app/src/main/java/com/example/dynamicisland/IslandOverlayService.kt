@@ -144,6 +144,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         is IslandContent.Notif -> 1
         is IslandContent.Media -> 2
         IslandContent.Assistant -> 3
+        is IslandContent.Favorites -> 4
     }
 
     // ---------------------------------------------------------------- Olay mantığı
@@ -191,6 +192,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         when {
             cur.content is IslandContent.Assistant -> update { it }
             cur.content is IslandContent.Notif -> update { it }
+            cur.content is IslandContent.Favorites -> update { it }    // favori paneli açıkken müzik paneline geçme
             m == null || (!m.playing && !cur.expanded) -> { collapseJob?.cancel(); rest() }
             else -> update { it.copy(content = m) }
         }
@@ -250,8 +252,53 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     scheduleCollapse(8_000)
                 }
             is IslandContent.Notif -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
-            IslandContent.Assistant, IslandContent.Idle -> Unit
+            is IslandContent.Favorites -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
+            IslandContent.Idle -> {
+                val s = settings.value
+                if (s.favoritesReady() && s.favoritesTrigger == 0) openFavorites()
+            }
+            IslandContent.Assistant -> Unit
         }
+    }
+
+    /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
+    private fun onPillLongPress() {
+        val cur = ui.value
+        if (cur.content is IslandContent.Idle) {
+            if (settings.value.favoritesReady()) openFavorites()
+        } else {
+            onPillTap()
+        }
+    }
+
+    // ---------------------------------------------------------------- Favori uygulamalar
+    private val favCache = java.util.concurrent.ConcurrentHashMap<String, FavApp>()
+
+    private fun favApp(pkg: String): FavApp? = favCache[pkg] ?: runCatching {
+        val pm = packageManager
+        val label = pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        val icon = pm.getApplicationIcon(pkg).toBitmap(112, 112).asImageBitmap()
+        FavApp(pkg, label, icon)
+    }.getOrNull()?.also { favCache[pkg] = it }
+
+    private fun openFavorites() {
+        val s = settings.value
+        if (!s.favoritesReady()) return
+        scope.launch {
+            val apps = withContext(Dispatchers.Default) { s.favoritePkgList().mapNotNull { favApp(it) } }
+            if (apps.isEmpty()) return@launch
+            // Yüklenirken müzik/bildirim/asistan geldiyse favorileri açma
+            if (ui.value.content !is IslandContent.Idle) return@launch
+            update { IslandUiState(IslandContent.Favorites(apps), expanded = true) }
+            scheduleCollapse(7_000)
+        }
+    }
+
+    private fun launchFavorite(pkg: String) {
+        val intent = packageManager.getLaunchIntentForPackage(pkg)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        if (intent != null) runCatching { startActivity(intent) }
+        collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
     }
 
     private fun onCommand(c: MediaCommand) {
@@ -348,6 +395,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 IslandRoot(
                     state = ui, settingsFlow = settings, lyricsFlow = lyrics,
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
+                    onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
                 )
             }
         }
@@ -516,7 +564,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val music = k.kind == 2
         val assistant = k.kind == 3
         val ew = dp(if (assistant) s.assistantWidthDp else s.expandedWidthDp)
-        val eh = dp(if (assistant) s.assistantHeightDp else s.expandedHeightDp + if (music) s.musicExtraDp() else 0f)
+        val favN = (ui.value.content as? IslandContent.Favorites)?.apps?.size ?: 0
+        val eh = dp(
+            when {
+                assistant -> s.assistantHeightDp
+                k.kind == 4 -> s.favoritesHeightDp(favN)
+                else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
+            }
+        )
 
         val screenW = wm.currentWindowMetrics.bounds.width()
         val baseX = cutCenterXOffsetPx + dp(s.offsetXDp)
@@ -526,7 +581,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val settle = s.settleMs()
         val blurOk = pad == 0        // pay varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
-        setTouchable(k.kind != 0 && !assistant)
+        // Boştayken de dokunulabilir: favori uygulamalar özelliği açıksa (dokunma / basılı tutma algılanır)
+        setTouchable((k.kind != 0 && !assistant) || (k.kind == 0 && s.favoritesReady()))
         when {
             k.kind == 0 && s.showIdle -> {
                 // Boşta da görünür: küçük ada boyutunda, dokunuşsuz
