@@ -136,7 +136,8 @@ fun IslandRoot(
             // Sözler görününce kapalı ada yumuşakça genişler / sözler bitince daralır
             val cwSpec: AnimationSpec<Dp> = if (cfg.animEnabled) tween<Dp>(380, easing = FastOutSlowInEasing) else snap<Dp>()
             val cw by animateDpAsState(compactWidthFor(cfg, s.compactLyrics && music).dp, cwSpec, label = "cw")
-            val geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
+            var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
+            if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput)
         }
     }
@@ -397,6 +398,7 @@ fun IslandPill(
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
+                    IslandContent.Assistant -> AssistantOrb()
                     IslandContent.Idle -> Unit
                 }
             }

@@ -143,12 +143,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandContent.Idle -> 0
         is IslandContent.Notif -> 1
         is IslandContent.Media -> 2
+        IslandContent.Assistant -> 3
     }
 
     // ---------------------------------------------------------------- Olay mantığı
     private fun handle(e: IslandEvent) {
         when (e) {
-            is IslandEvent.Notification -> scope.launch {
+            is IslandEvent.AssistantChanged -> onAssistant(e.active)
+            is IslandEvent.Notification -> if (!assistantActive) scope.launch {
                 val icon = iconFor(e.pkg)
                 showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon), holdMs = 4_000)
             }
@@ -165,6 +167,21 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         ui.value = n.copy(compactLyrics = want)
     }
 
+    private var assistantActive = false
+
+    /** Asistan/Gemini açılınca adayı büyütüp Siri animasyonunu gösterir; kapanınca eski haline döner. */
+    private fun onAssistant(active: Boolean) {
+        if (active == assistantActive) return
+        if (active && !settings.value.assistantEnabled) return
+        assistantActive = active
+        collapseJob?.cancel()
+        if (active) {
+            update { IslandUiState(IslandContent.Assistant, expanded = true) }
+        } else if (ui.value.content is IslandContent.Assistant) {
+            collapseJob = scope.launch { collapseAndRest() }
+        }
+    }
+
     private fun onMedia(m: IslandContent.Media?) {
         if (m == lastMedia) return
         lastMedia = m
@@ -172,6 +189,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         ensureLyrics()
         val cur = ui.value
         when {
+            cur.content is IslandContent.Assistant -> update { it }
             cur.content is IslandContent.Notif -> update { it }
             m == null || (!m.playing && !cur.expanded) -> { collapseJob?.cancel(); rest() }
             else -> update { it.copy(content = m) }
@@ -232,7 +250,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     scheduleCollapse(8_000)
                 }
             is IslandContent.Notif -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
-            IslandContent.Idle -> Unit
+            IslandContent.Assistant, IslandContent.Idle -> Unit
         }
     }
 
@@ -496,8 +514,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
         val cw = dp(compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
-        val ew = dp(s.expandedWidthDp)
-        val eh = dp(s.expandedHeightDp + if (music) s.musicExtraDp() else 0f)
+        val assistant = k.kind == 3
+        val ew = dp(if (assistant) s.assistantWidthDp else s.expandedWidthDp)
+        val eh = dp(if (assistant) s.assistantHeightDp else s.expandedHeightDp + if (music) s.musicExtraDp() else 0f)
 
         val screenW = wm.currentWindowMetrics.bounds.width()
         val baseX = cutCenterXOffsetPx + dp(s.offsetXDp)
@@ -507,7 +526,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val settle = s.settleMs()
         val blurOk = pad == 0        // pay varsa pencere adadan büyük olur; o zaman blur kapalı tutulur
 
-        setTouchable(k.kind != 0)
+        setTouchable(k.kind != 0 && !assistant)
         when {
             k.kind == 0 && s.showIdle -> {
                 // Boşta da görünür: küçük ada boyutunda, dokunuşsuz

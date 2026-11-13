@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 sealed interface IslandContent {
     data object Idle : IslandContent
 
+    /** Google Asistan / Gemini açıkken: ada Siri benzeri renkli animasyona dönüşür. */
+    data object Assistant : IslandContent
+
     data class Notif(
         val pkg: String, val title: String, val text: String,
         val icon: ImageBitmap? = null,
@@ -59,6 +62,7 @@ sealed interface LyricsState {
 sealed interface IslandEvent {
     data class Notification(val pkg: String, val title: String, val text: String) : IslandEvent
     data class MediaChanged(val media: IslandContent.Media?) : IslandEvent
+    data class AssistantChanged(val active: Boolean) : IslandEvent
 }
 
 /** Arayüz -> NotificationListener (medya kontrolü) komutları. */

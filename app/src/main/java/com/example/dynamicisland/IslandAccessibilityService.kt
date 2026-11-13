@@ -2,7 +2,12 @@ package com.example.dynamicisland
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.graphics.Rect
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import android.accessibilityservice.AccessibilityServiceInfo
 import androidx.core.app.NotificationManagerCompat
 
 /**
@@ -18,21 +23,73 @@ class IslandAccessibilityService : AccessibilityService() {
         @Volatile var instance: IslandAccessibilityService? = null
         /** Servis bağlanınca / kopunca overlay servisine haber verir (ana thread). */
         @Volatile var onChanged: (() -> Unit)? = null
+
+        /** Asistan / Gemini penceresini barındıran paketler. */
+        private val ASSISTANT_PKGS = setOf(
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.apps.bard",
+            "com.google.android.apps.googleassistant",
+        )
+        private const val TAG = "IslandAssistant"
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var assistantOn = false
+    private val checkRunnable = Runnable { checkAssistant() }
+
+    /**
+     * Ekranda Google uygulamasına ait, tam ekran OLMAYAN bir pencere varsa asistan/Gemini çubuğu açıktır.
+     * (Tam ekran Google uygulaması ya da Discover asistan sayılmaz.) Pencere bilgisi için
+     * erişilebilirlik yapılandırmasında canRetrieveWindowContent ve flagRetrieveInteractiveWindows gerekir.
+     */
+    private fun checkAssistant() {
+        runCatching {
+            val screenH = resources.displayMetrics.heightPixels
+            val r = Rect()
+            var found = false
+            for (w in windows) {
+                val pkg = w.root?.packageName?.toString() ?: continue
+                if (pkg !in ASSISTANT_PKGS) continue
+                w.getBoundsInScreen(r)
+                val full = r.height() >= screenH * 0.85f
+                if (!full) found = true
+                if (found && !assistantOn) Log.d(TAG, "pencere: pkg=$pkg type=${w.type} bounds=$r")
+            }
+            if (found != assistantOn) {
+                assistantOn = found
+                IslandBus.post(IslandEvent.AssistantChanged(found))
+            }
+        }
+    }
+
+    private fun scheduleCheck() {
+        handler.removeCallbacks(checkRunnable)
+        handler.postDelayed(checkRunnable, 120)
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        // XML'de yoksa da pencere olaylarını iste (yetki yine XML'deki canRetrieveWindowContent'ten gelir)
+        runCatching {
+            serviceInfo = serviceInfo?.apply {
+                eventTypes = eventTypes or AccessibilityEvent.TYPE_WINDOWS_CHANGED or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+                flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            }
+        }
         notifyChanged()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        handler.removeCallbacks(checkRunnable)
+        if (assistantOn) { assistantOn = false; IslandBus.post(IslandEvent.AssistantChanged(false)) }
         notifyChanged()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        handler.removeCallbacks(checkRunnable)
         instance = null
         super.onDestroy()
     }
@@ -48,7 +105,11 @@ class IslandAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         runCatching {
-            if (event?.eventType != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
+            val type = event?.eventType
+            if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+                scheduleCheck(); return
+            }
+            if (type != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
             if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return
             val text = event.text.joinToString(" ").trim()
             if (text.isEmpty()) return

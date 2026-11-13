@@ -76,6 +76,11 @@ data class IslandSettings(
     // Görünürlük
     val showIdle: Boolean = false,           // müzik/bildirim yokken de ada görünsün
 
+    // Google Asistan / Gemini animasyonu
+    val assistantEnabled: Boolean = true,
+    val assistantWidthDp: Float = 200f,
+    val assistantHeightDp: Float = 104f,
+
     // Gökkuşağı modu
     val rainbowEnabled: Boolean = false,
     val rainbowAlpha: Float = 0.85f,         // gökkuşağının saydamlığı (1 = tam opak)
@@ -168,6 +173,7 @@ class SettingsRepository(context: Context) {
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
         val IDLE = booleanPreferencesKey("idle")
+        val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
 
         val LY_ON = booleanPreferencesKey("ly_on"); val LY_PANEL = booleanPreferencesKey("ly_panel")
@@ -227,6 +233,9 @@ class SettingsRepository(context: Context) {
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
             showIdle = p[K.IDLE] ?: d.showIdle,
+            assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
+            assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
+            assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
             rainbowEnabled = p[K.RB_ON] ?: d.rainbowEnabled,
             rainbowAlpha = p[K.RB_A] ?: d.rainbowAlpha,
             lyricsEnabled = p[K.LY_ON] ?: d.lyricsEnabled,
@@ -277,6 +286,7 @@ class SettingsRepository(context: Context) {
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
             it[K.IDLE] = s.showIdle
+            it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
             it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha
             it[K.LY_ON] = s.lyricsEnabled; it[K.LY_PANEL] = s.lyricsInPanel
             it[K.LY_COMPACT] = s.lyricsCompact; it[K.LY_OUT] = s.lyricsOutside

@@ -148,6 +148,14 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
             }
 
+            SectionCard("Google Asistan / Gemini", "Asistan açılınca ada Siri benzeri renkli animasyona dönüşür") {
+                SwitchRow("Asistan animasyonu", "Erişilebilirlik servisi açık olmalı", draft.assistantEnabled) { draft = draft.copy(assistantEnabled = it) }
+                if (draft.assistantEnabled) {
+                    SliderRow("Genişlik", draft.assistantWidthDp, 120f..300f, "${draft.assistantWidthDp.toInt()} dp") { draft = draft.copy(assistantWidthDp = it) }
+                    SliderRow("Yükseklik", draft.assistantHeightDp, 60f..180f, "${draft.assistantHeightDp.toInt()} dp") { draft = draft.copy(assistantHeightDp = it) }
+                }
+            }
+
             // ---- Görünüm
             GroupLabel("Görünüm")
 
