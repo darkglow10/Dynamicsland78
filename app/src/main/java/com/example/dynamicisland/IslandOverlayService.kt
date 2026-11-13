@@ -325,11 +325,97 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         scheduleCollapse(7_000)
     }
 
-    private fun launchFavorite(pkg: String) {
+    // ---------------------------------------------------------------- Favori açılış animasyonu
+    private val LAUNCH_LEAD_MS = 170L        // ada küçülmeye başladıktan kaç ms sonra siyah ekran çıksın
+    private var launchView: ComposeView? = null
+    private var launchWm: WindowManager? = null
+    private var launching = false
+
+    private fun launchApp(pkg: String) {
         val intent = packageManager.getLaunchIntentForPackage(pkg)
             ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         if (intent != null) runCatching { startActivity(intent) }
+    }
+
+    private fun launchFavorite(pkg: String) {
+        // Ada önce açıktan kapalı hale geçer; animasyon bu geçişle birlikte başlar
         collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() }
+        if (!settings.value.favoriteLaunchAnim) { launchApp(pkg); return }
+        if (launching) return
+        launching = true
+        scope.launch { delay(LAUNCH_LEAD_MS); startLaunchTransition(pkg) }
+    }
+
+    private fun startLaunchTransition(pkg: String) {
+        val s = settings.value
+        val sw = wm.currentWindowMetrics.bounds.width()
+        val chPx = dp(s.compactHeightDp)
+        val spec = LaunchSpec(
+            cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+            top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
+            w = dp(compactWidthFor(s, false)).toFloat(),
+            h = chPx.toFloat(),
+        )
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        lateinit var view: ComposeView
+        view = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@IslandOverlayService)
+            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
+            setContent {
+                LaunchTransition(
+                    spec,
+                    onCovered = { launchApp(pkg) },                       // ekran tamamen siyah: uygulamayı aç
+                    onFinished = { handler.post { if (launchView === view) removeLaunchView() } },
+                )
+            }
+        }
+        fun params(type: Int) = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+
+        // Ada penceresiyle aynı katman: erişilebilirlik overlay'i durum çubuğunun da üstünde çizilir
+        var host: WindowManager = wm
+        var added = false
+        IslandAccessibilityService.instance?.let { a11y ->
+            runCatching {
+                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
+                h2.addView(view, params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY))
+                host = h2; added = true
+            }
+        }
+        if (!added) added = runCatching { wm.addView(view, params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)) }.isSuccess
+
+        if (!added) {                        // pencere eklenemedi: animasyonsuz aç
+            view.disposeComposition()
+            launching = false
+            launchApp(pkg)
+            return
+        }
+        launchView = view; launchWm = host
+        // Güvenlik: ne olursa olsun siyah katman ekranda kalmasın
+        scope.launch { delay(5_000); if (launchView === view) removeLaunchView() }
+    }
+
+    private fun removeLaunchView() {
+        val v = launchView
+        if (v != null) {
+            runCatching { (launchWm ?: wm).removeView(v) }
+            v.disposeComposition()
+            v.setViewTreeLifecycleOwner(null)
+            v.setViewTreeSavedStateRegistryOwner(null)
+        }
+        launchView = null; launchWm = null; launching = false
     }
 
     private fun onCommand(c: MediaCommand) {
@@ -788,6 +874,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     override fun onDestroy() {
         IslandAccessibilityService.onChanged = null
         lyricsJob?.cancel()
+        runCatching { removeLaunchView() }
         detachOutside()
         collapseJob?.cancel()
         scope.cancel()

@@ -116,6 +116,12 @@ fun FavoritesSection(draft: IslandSettings, set: (IslandSettings) -> Unit) {
                 set(draft.copy(favoritesTrigger = 1))
             }
             SectionDivider()
+            SwitchRow(
+                "Açılış animasyonu",
+                "Uygulamaya dokununca adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır",
+                draft.favoriteLaunchAnim,
+            ) { set(draft.copy(favoriteLaunchAnim = it)) }
+            SectionDivider()
             if (selected.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     selected.forEach { pkg -> AppIcon(pkg, 40.dp) }
