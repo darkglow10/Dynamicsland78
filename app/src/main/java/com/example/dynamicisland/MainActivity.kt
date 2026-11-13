@@ -197,7 +197,8 @@ private fun SetupScreen() {
     var crash by remember { mutableStateOf(CrashLog.lastCrash(ctx)) }
     val broken = a11y && !connected          // ayarlarda açık ama servis çalışmıyor
 
-    LaunchedEffect(Unit) { while (true) { connected = a11yConnected(); delay(1000) } }
+    var winDump by remember { mutableStateOf(IslandAccessibilityService.lastDump) }
+    LaunchedEffect(Unit) { while (true) { connected = a11yConnected(); winDump = IslandAccessibilityService.lastDump; delay(1000) } }
 
     // Ayarlar sayfasına gönderdiğimiz izin: verilir verilmez uygulamayı öne getiririz
     var waiting by remember { mutableStateOf<String?>(null) }
@@ -338,11 +339,16 @@ private fun SetupScreen() {
                 crash?.let {
                     Text("Son çökme kaydı:\n" + it.take(900), color = Color(0xFFFF6B5E), fontSize = 11.sp, lineHeight = 15.sp)
                 }
+                if (winDump.isNotEmpty()) {
+                    Text("Son asistan penceresi kaydı:
+" + winDump.take(900), color = cs2.onSurfaceVariant, fontSize = 11.sp, lineHeight = 15.sp)
+                }
                 IslandActionButton("Tanılamayı kopyala", {
                     copyText(ctx, "diag", buildString {
                         appendLine("a11y enabled=$a11y connected=$connected listener=$listener battery=$battery")
                         exits.forEach { appendLine(it) }
                         crash?.let { appendLine(it) }
+                        if (winDump.isNotEmpty()) appendLine(winDump)
                     })
                 })
                 if (!ctx.canHealA11y()) {

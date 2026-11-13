@@ -3,6 +3,7 @@ package com.example.dynamicisland
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
@@ -15,7 +16,7 @@ import androidx.core.app.NotificationManagerCompat
  *    durur ve dokunuş alır (normal uygulama overlay'i durum çubuğunun altında kalır).
  * 2) Yedek bildirim olayı: yalnızca TYPE_NOTIFICATION_STATE_CHANGED dinler. Bildirim erişimi
  *    (NotificationListener) açıksa çift bildirim olmaması için sessiz kalır.
- * 3) Google Asistan / Gemini algılama: asistan penceresi açılınca / kapanınca [IslandEvent.AssistantChanged] yayınlar.
+ * 3) Google Asistan / Gemini algılama: alttaki asistan barı açılınca / kapanınca [IslandEvent.AssistantChanged] yayınlar.
  */
 class IslandAccessibilityService : AccessibilityService() {
 
@@ -23,6 +24,8 @@ class IslandAccessibilityService : AccessibilityService() {
         @Volatile var instance: IslandAccessibilityService? = null
         /** Servis bağlanınca / kopunca overlay servisine haber verir (ana thread). */
         @Volatile var onChanged: (() -> Unit)? = null
+        /** Son asistan penceresi kaydı (Kurulum > Tanılama'da görünür): algılama sorunlarını incelemek için. */
+        @Volatile var lastDump: String = ""
 
         /** Asistan / Gemini arayüzünü barındıran paketler. Cihazında başka bir asistan varsa buraya ekle. */
         private val ASSISTANT_PKGS = setOf(
@@ -34,9 +37,12 @@ class IslandAccessibilityService : AccessibilityService() {
         private val IGNORED_PKGS = setOf("com.android.systemui")
     }
 
+    private class Win(val w: AccessibilityWindowInfo, val pkg: String?, val r: Rect)
+
     private val handler = Handler(Looper.getMainLooper())
     private var assistantOn = false
     private var eventSaysOn = false      // pencere listesi alınamazsa olay tabanlı yedek
+    private val evLog = ArrayDeque<String>()
 
     private val check = object : Runnable {
         override fun run() {
@@ -50,7 +56,7 @@ class IslandAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        // Pencere listesini okuyabilmek için (XML'e ek olarak, çalışma anında da): asistan penceresi bununla görülür
+        // Pencere listesini okuyabilmek için (XML'e ek olarak, çalışma anında da)
         runCatching {
             serviceInfo?.let { info ->
                 info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
@@ -95,18 +101,42 @@ class IslandAccessibilityService : AccessibilityService() {
         IslandBus.post(IslandEvent.AssistantChanged(on))
     }
 
-    /** Ekranda asistan penceresi var mı? Önce pencere listesine bakar; alınamazsa son pencere olaylarına güvenir. */
+    private fun isAssist(p: String?) = p != null && p in ASSISTANT_PKGS
+
+    /**
+     * Ekranda asistan barı var mı? Google / Gemini penceresi şu durumlarda "bar" sayılır:
+     *  - uygulama türünde değilse (sistem / kaplama penceresi), ya da
+     *  - ekranı tamamen kaplamıyorsa (alttaki bar), ya da
+     *  - altında başka bir uygulama penceresi (ana ekran, açık uygulama) görünüyorsa.
+     * Google / Gemini uygulaması tek başına tam ekran açıldığında bunların hiçbiri sağlanmaz.
+     */
     private fun assistantVisible(): Boolean {
         val ws = runCatching { windows }.getOrNull()
-        if (!ws.isNullOrEmpty()) {
-            // Yalnızca asistanın KAPLAMA penceresi sayılır (alttaki "Gemini'a sorun" barı). Google / Gemini uygulaması
-            // normal bir uygulama olarak açıldığında penceresi TYPE_APPLICATION olur ve sayılmaz.
-            return ws.any { w ->
-                w.type != AccessibilityWindowInfo.TYPE_APPLICATION &&
-                    runCatching { w.root?.packageName?.toString()?.let { it in ASSISTANT_PKGS } == true }.getOrDefault(false)
-            }
+        if (ws.isNullOrEmpty()) return eventSaysOn
+        val dm = resources.displayMetrics
+        val infos = ws.map { w ->
+            val r = Rect()
+            runCatching { w.getBoundsInScreen(r) }
+            Win(w, runCatching { w.root?.packageName?.toString() }.getOrNull(), r)
         }
-        return eventSaysOn
+        val assist = infos.filter { isAssist(it.pkg) }
+        if (assist.isEmpty()) return false
+
+        val otherApps = infos.count {
+            it.pkg != null && !isAssist(it.pkg) && it.pkg !in IGNORED_PKGS && it.pkg != packageName &&
+                it.w.type == AccessibilityWindowInfo.TYPE_APPLICATION
+        }
+        fun partial(i: Win) = i.r.width() < dm.widthPixels * 0.95f || i.r.height() < dm.heightPixels * 0.95f
+        val result = assist.any {
+            it.w.type != AccessibilityWindowInfo.TYPE_APPLICATION || partial(it) || otherApps > 0
+        }
+
+        lastDump = buildString {
+            appendLine("ekran=${dm.widthPixels}x${dm.heightPixels} sonuç=$result digerUygulama=$otherApps")
+            infos.forEach { appendLine("tür=${it.w.type} pkg=${it.pkg} başlık=${it.w.title} sınır=${it.r.flattenToString()} katman=${it.w.layer}") }
+            if (evLog.isNotEmpty()) appendLine("olaylar: " + evLog.joinToString(" | "))
+        }
+        return result
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -122,9 +152,12 @@ class IslandAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
                     val pkg = e.packageName?.toString()
                     if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
-                        // Yedek (pencere listesi yokken): ekran sınıfı bir Activity ise normal uygulama açılmıştır, asistan değil
-                        if (pkg in ASSISTANT_PKGS) eventSaysOn = e.className?.contains("Activity") != true
-                        else if (pkg != packageName && pkg !in IGNORED_PKGS) eventSaysOn = false
+                        if (isAssist(pkg)) {
+                            evLog.addLast("$pkg ${e.className}")
+                            while (evLog.size > 6) evLog.removeFirst()
+                            // Yedek (pencere listesi yokken): ekran sınıfı bir Activity ise normal uygulama açılmıştır
+                            eventSaysOn = e.className?.contains("Activity") != true
+                        } else if (pkg != packageName && pkg !in IGNORED_PKGS) eventSaysOn = false
                     }
                     // Olay yağmurunu tek kontrole indir
                     handler.removeCallbacks(check)
