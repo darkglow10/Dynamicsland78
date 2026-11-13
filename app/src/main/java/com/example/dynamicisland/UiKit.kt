@@ -15,6 +15,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -121,6 +122,7 @@ fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, valueText: String, onChange: (Float) -> Unit) {
     val cs = MaterialTheme.colorScheme
