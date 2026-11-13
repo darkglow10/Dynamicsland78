@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
+/** Favori paneldeki bir uygulama (simge önceden yüklenir). */
 @Immutable
 data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
@@ -22,7 +23,6 @@ sealed interface IslandContent {
         val intent: android.app.PendingIntent? = null,
     ) : IslandContent
 
-    // Gelen Arama Modeli
     data class Call(
         val callerName: String,
         val phoneNumber: String,
@@ -54,6 +54,18 @@ data class IslandUiState(
     val expanded: Boolean = false,
     val compactLyrics: Boolean = false,
 )
+
+// ---------------------------------------------------------------- Şarkı Sözü Modelleri (Eksiksiz)
+@Immutable
+data class LyricLine(val timeMs: Long, val text: String)
+
+@Immutable
+sealed interface LyricsState {
+    data object Idle : LyricsState
+    data object Loading : LyricsState
+    data object NotFound : LyricsState
+    data class Ready(val lines: List<LyricLine>, val synced: Boolean, val source: String = "") : LyricsState
+}
 
 sealed interface IslandEvent {
     data class Notification(val pkg: String, val title: String, val text: String, val intent: android.app.PendingIntent? = null) : IslandEvent
