@@ -1,71 +1,583 @@
-// IslandRoot veya genişletilmiş ada çizim fonksiyonu içinde IslandContent.Call eşleşmesi:
-is IslandContent.Call -> {
-    Row(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(Color.Gray),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = call.callerName.take(1).uppercase(),
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp
-                )
+package com.example.dynamicisland
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.max
+import kotlin.math.min
+
+const val MUSIC_EXTRA_DP = 100f
+
+@Immutable
+data class Geo(val cw: Dp, val ch: Dp, val ew: Dp, val eh: Dp)
+
+fun compactWidthFor(cfg: IslandSettings, compactLyrics: Boolean): Float =
+    if (compactLyrics) maxOf(cfg.compactWidthDp, cfg.lyricsCompactWidthDp) else cfg.compactWidthDp
+
+fun islandGeo(cfg: IslandSettings, music: Boolean, compactLyrics: Boolean = false) = Geo(
+    cw = compactWidthFor(cfg, compactLyrics && music).dp,
+    ch = cfg.compactHeightDp.dp,
+    ew = cfg.expandedWidthDp.dp,
+    eh = (cfg.expandedHeightDp + if (music) cfg.musicExtraDp() else 0f).dp,
+)
+
+// ---------------------------------------------------------------- Animasyon (5 stil + kapalı)
+/** Genişlik ve yükseklik ilerlemesi ayrı: "Sıvı" stilinde farklı zamanlanır, diğerlerinde aynıdır. */
+@Stable
+class IslandProgress(val w: State<Float>, val h: State<Float>) {
+    val mean: Float get() = (w.value + h.value) / 2f
+}
+
+private fun specFor(cfg: IslandSettings, expanding: Boolean, isWidth: Boolean): FiniteAnimationSpec<Float> {
+    if (!cfg.animEnabled) return snap()
+    return when (cfg.animStyle) {
+        0 -> spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMediumLow)           // Yaylı
+        1 -> tween(520, easing = FastOutSlowInEasing)                                      // Yumuşak
+        2 -> tween(220, easing = LinearOutSlowInEasing)                                    // Hızlı
+        3 -> spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMediumLow)           // Zıplamalı
+        else -> {                                                                          // Sıvı
+            val first = if (expanding) isWidth else !isWidth       // açılırken önce genişlik, kapanırken önce yükseklik
+            tween(durationMillis = 340, delayMillis = if (first) 0 else 140, easing = FastOutSlowInEasing)
+        }
+    }
+}
+
+@Composable
+fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean): IslandProgress {
+    val target = if (expanded) 1f else 0f
+    val pw = animateFloatAsState(target, specFor(cfg, expanded, true), label = "pw")
+    val ph = animateFloatAsState(target, specFor(cfg, expanded, false), label = "ph")
+    return remember(pw, ph) { IslandProgress(pw, ph) }
+}
+
+private const val EXPAND_LEAD_MS = 70L
+
+@Composable
+fun IslandRoot(
+    state: StateFlow<IslandUiState>,
+    settingsFlow: StateFlow<IslandSettings>,
+    lyricsFlow: StateFlow<LyricsState>,
+    onTap: () -> Unit,
+    onCommand: (MediaCommand) -> Unit,
+    onOutput: () -> Unit,
+    onLongPress: () -> Unit = {},
+    onLaunch: (String) -> Unit = {},
+) {
+    val s by state.collectAsState()
+    val cfg by settingsFlow.collectAsState()
+    val lyrics by lyricsFlow.collectAsState()
+    val content = s.content
+    val media = content as? IslandContent.Media
+    // Açılırken animasyonu çok kısa geciktir: pencere önce büyüsün, animasyonun ilk (en hızlı) kareleri
+    // küçük pencereye çizilip kırpılmasın ("yaylı" animasyonda açılışta takılma). Kapanış gecikmesizdir.
+    var animExpanded by remember { mutableStateOf(s.expanded) }
+    LaunchedEffect(s.expanded) {
+        if (s.expanded && cfg.animEnabled) delay(EXPAND_LEAD_MS)
+        animExpanded = s.expanded
+    }
+    val progress = rememberIslandProgress(cfg, animExpanded)
+    val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
+    val frame = rememberLyricFrame(
+        media, lyrics, cfg.lyricsOffsetMs.toLong(),
+        active = lyricsOn && lyrics is LyricsState.Ready, fine = cfg.lyricsFillEnabled,
+    )
+
+    // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
+    Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
+        // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.
+        if (content !is IslandContent.Idle || cfg.showIdle) {
+            val music = content is IslandContent.Media
+            // Sözler görününce kapalı ada yumuşakça genişler / sözler bitince daralır
+            val cwSpec: AnimationSpec<Dp> = if (cfg.animEnabled) tween<Dp>(380, easing = FastOutSlowInEasing) else snap<Dp>()
+            val cw by animateDpAsState(compactWidthFor(cfg, s.compactLyrics && music).dp, cwSpec, label = "cw")
+            var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
+            if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
+            if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch)
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Renk / yüzey / parıltı
+private val PillShape = RoundedCornerShape(36.dp)
+private val GlassMaxRadius = 36.dp
+
+private fun darkTone(c: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    // Eskiden çok koyuydu (0.26): artık kapak rengi daha canlı görünür, beyaz yazı yine rahat okunur.
+    // Gri/siyah kapaklar kırmızıya boyanmasın diye gri kalır.
+    val gray = hsv[1] < 0.12f
+    hsv[1] = if (gray) hsv[1] else hsv[1].coerceIn(0.55f, 0.95f)
+    hsv[2] = if (gray) 0.30f else 0.50f
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+/** Ekolayzır için: albüm rengi aynı tonda ama en parlak ve biraz pastel; koyu ada gövdesinden net ayrılır. */
+private fun brightTone(c: Color): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(c.toArgb(), hsv)
+    hsv[1] = (hsv[1] * 0.85f).coerceIn(0f, 0.8f)
+    hsv[2] = 1f
+    return Color(android.graphics.Color.HSVToColor(hsv))
+}
+
+private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color {
+    val tint: Color? = if (cfg.dynamicColor) art else null
+    return when {
+        cfg.glassEnabled -> (tint ?: accent).copy(alpha = cfg.glassAlpha)
+        tint != null -> darkTone(tint)
+        else -> Color.Black
+    }
+}
+
+// ---------------------------------------------------------------- Liquid Glass katmanları
+/**
+ * Liquid Glass — içeriğin ARKASINA çizilen katmanlar:
+ *  1) üstten alta ışık geçişi (camın kalınlığı), alt kenarda hafif ışık toplanması
+ *  2) sol üstte yumuşak speküler parlama
+ *  3) kenarlara doğru incelen iç ışık halkaları (lens / kırılma hissi)
+ */
+private fun DrawScope.drawGlassBase(cornerT: Float = -1f) {
+    val w = size.width; val h = size.height
+    if (w <= 1f || h <= 1f) return
+    val r = islandCornerPx(w, h, density, cornerT)
+
+    drawRect(
+        Brush.verticalGradient(
+            0f to Color.White.copy(0.17f),
+            0.40f to Color.White.copy(0.04f),
+            0.72f to Color.Transparent,
+            1f to Color.White.copy(0.09f),
+        )
+    )
+    drawRect(
+        Brush.radialGradient(
+            0f to Color.White.copy(0.22f),
+            0.6f to Color.White.copy(0.05f),
+            1f to Color.Transparent,
+            center = Offset(w * 0.20f, h * 0.02f),
+            radius = max(w * 0.60f, h),
+        )
+    )
+    // Alt-sağ köşede çok hafif ikincil parlama (ışığın cam içinden geçip toplandığı yer)
+    drawRect(
+        Brush.radialGradient(
+            0f to Color.White.copy(0.08f),
+            1f to Color.Transparent,
+            center = Offset(w * 0.88f, h * 1.0f),
+            radius = max(w * 0.35f, h * 0.9f),
+        )
+    )
+
+    val rings = 6
+    val step = 1.4.dp.toPx()
+    for (i in 0 until rings) {
+        val inset = i * step + step / 2f
+        val a = 0.12f * (1f - i / rings.toFloat())
+        drawRoundRect(
+            color = Color.White.copy(alpha = a),
+            topLeft = Offset(inset, inset),
+            size = Size((w - 2 * inset).coerceAtLeast(0f), (h - 2 * inset).coerceAtLeast(0f)),
+            cornerRadius = CornerRadius((r - inset).coerceAtLeast(0f)),
+            style = Stroke(width = step),
+        )
+    }
+}
+
+/**
+ * Liquid Glass — içeriğin ÜSTÜNE çizilen ince kenar ışığı (specular rim):
+ * sol-üstte parlak, ortada sönük, sağ-altta tekrar parlak; iOS'taki cam kenarı gibi.
+ */
+private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
+    val w = size.width; val h = size.height
+    if (w <= 1f || h <= 1f) return
+    val r = islandCornerPx(w, h, density, cornerT)
+
+    val sw = 1.3.dp.toPx()
+    val rim = Brush.linearGradient(
+        0f to Color.White.copy(0.90f),
+        0.28f to Color.White.copy(0.20f),
+        0.62f to Color.White.copy(0.07f),
+        1f to Color.White.copy(0.55f),
+        start = Offset.Zero, end = Offset(w, h),
+    )
+    drawRoundRect(
+        brush = rim,
+        topLeft = Offset(sw / 2f, sw / 2f),
+        size = Size(w - sw, h - sw),
+        cornerRadius = CornerRadius((r - sw / 2f).coerceAtLeast(0f)),
+        style = Stroke(width = sw),
+    )
+
+    // İç ikinci halka: kenarın "kalınlığını" verir
+    val sw2 = 0.7.dp.toPx()
+    val off = sw + sw2 / 2f
+    drawRoundRect(
+        color = Color.White.copy(alpha = 0.10f),
+        topLeft = Offset(off, off),
+        size = Size((w - 2 * off).coerceAtLeast(0f), (h - 2 * off).coerceAtLeast(0f)),
+        cornerRadius = CornerRadius((r - off).coerceAtLeast(0f)),
+        style = Stroke(width = sw2),
+    )
+
+    // Üst kenarda ortası parlak, uçları kaybolan speküler çizgi
+    if (w > 2.2f * r) {
+        val y = 1.8.dp.toPx()
+        val x0 = r * 0.9f; val x1 = w - r * 0.9f
+        drawLine(
+            brush = Brush.horizontalGradient(
+                0f to Color.Transparent,
+                0.35f to Color.White.copy(0.55f),
+                0.65f to Color.White.copy(0.30f),
+                1f to Color.Transparent,
+                startX = x0, endX = x1,
+            ),
+            start = Offset(x0, y), end = Offset(x1, y),
+            strokeWidth = 1.1.dp.toPx(), cap = StrokeCap.Round,
+        )
+    }
+}
+
+/** Renk State olarak taşınır, yalnızca çizim fazında okunur => animasyonda recomposition yok. */
+@Composable
+private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f): Modifier {
+    val liquid = cfg.glassEnabled && cfg.liquidEnabled
+    var m = this.clip(shape).drawBehind { drawRect(body.value) }
+    if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular, cornerT) }
+    if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
+    else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase(cornerT) }
+    if (cfg.borderEnabled) {
+        val rbBorder = rememberRainbowStyle(cfg)
+        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), shape)
+        else m.drawWithContent {
+            drawContent()
+            // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
+            val w = cfg.borderWidthDp.dp.toPx() * 2f
+            val brush = rainbowBrush(rbBorder.phase.value, size.width, rbBorder.alpha)
+            val r = minOf(36.dp.toPx(), size.height / 2f)
+            drawRoundRect(brush, cornerRadius = CornerRadius(r, r), style = Stroke(width = w))
+        }
+    }
+    // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
+    if (liquid) m = m.drawWithContent { drawContent(); drawLiquidRim(cfg.liquidSpecular, cornerT) }
+    else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim(cornerT) }
+    // En içte: yalnızca iç içerik (kapak, yazı, butonlar) kenarlarda bükülür (Android 13+)
+    if (liquid && !LiquidCapture.running) m = m.liquidRefraction(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
+    return m
+}
+
+/** Blur filtresi yerine kademeli (azalan opaklıkta) halkalar: GPU dostu, her cihazda çalışır. */
+private fun Modifier.islandGlow(enabled: Boolean, color: State<Color>, intensity: Float): Modifier =
+    if (!enabled) this else this.drawBehind {
+        val rings = 6
+        val step = GLOW_PAD_DP.dp.toPx() / rings
+        val base = min(36.dp.toPx(), size.height / 2f)
+        val c = color.value
+        for (i in 1..rings) {
+            val inflate = (i - 0.5f) * step
+            val fall = 1f - (i - 1f) / rings
+            val a = (intensity * 0.6f * fall * fall).coerceIn(0f, 1f)
+            drawRoundRect(
+                color = c.copy(alpha = a),
+                topLeft = Offset(-inflate, -inflate),
+                size = Size(size.width + 2 * inflate, size.height + 2 * inflate),
+                cornerRadius = CornerRadius(base + inflate),
+                style = Stroke(width = step),
+            )
+        }
+    }
+
+@Composable
+fun IslandPill(
+    content: IslandContent,
+    progress: IslandProgress,
+    geo: Geo,
+    cfg: IslandSettings,
+    lyrics: LyricsState,
+    frame: LyricFrame,
+    compactLyrics: Boolean,
+    onTap: () -> Unit,
+    onCommand: (MediaCommand) -> Unit,
+    onOutput: () -> Unit,
+    onLongPress: () -> Unit = {},
+    onLaunch: (String) -> Unit = {},
+) {
+    // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
+    val tapNow by rememberUpdatedState(onTap)
+    val longPressNow by rememberUpdatedState(onLongPress)
+    // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
+    val assistant = content is IslandContent.Assistant
+    val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
+    val cornerT = if (assistant) progress.mean else -1f
+    val shape: Shape = if (assistant) AssistantShape(cornerT) else PillShape
+    val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
+    val rb = rememberRainbowStyle(cfg)
+    val media = content as? IslandContent.Media
+    val artColor = if (media != null && media.artColor != 0) Color(media.artColor) else null
+    val highlight = if (cfg.dynamicColor && artColor != null) artColor else accent
+    val eqColor = remember(highlight) { brightTone(highlight) }
+
+    // Galeriden seçilen özel görseller (ayar kapalıysa boş adres verilir => null). Diske kopyalanmaz.
+    val bgOn = cfg.customBgEnabled
+    val bgBoth = rememberCustomImage(CustomImages.Slot.BG_BOTH, if (bgOn && !cfg.customBgSeparate) cfg.customBgBothUri else "")
+    val bgCompact = rememberCustomImage(CustomImages.Slot.BG_COMPACT, if (bgOn && cfg.customBgSeparate) cfg.customBgCompactUri else "")
+    val bgExpanded = rememberCustomImage(CustomImages.Slot.BG_EXPANDED, if (bgOn && cfg.customBgSeparate) cfg.customBgExpandedUri else "")
+    val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
+
+    // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
+    val bodyTarget = if (assistant && cfg.glassEnabled) Color.Black.copy(alpha = max(cfg.glassAlpha, 0.6f)) else bodyColorFor(cfg, artColor, accent)
+    val body = animateColorAsState(bodyTarget, tween(450), label = "body")
+    val glow = animateColorAsState(artColor ?: accent, tween(450), label = "glow")
+
+    val panelVisible by remember(progress) { derivedStateOf { max(progress.w.value, progress.h.value) > 0.01f } }
+    val compactVisible by remember(progress) { derivedStateOf { progress.mean < 0.5f } }
+
+    Box(
+        modifier = Modifier
+            .layout { measurable, _ ->
+                val w = lerp(geo.cw, geo.ew, progress.w.value).roundToPx().coerceAtLeast(1)
+                val h = lerp(geo.ch, geo.eh, progress.h.value).roundToPx().coerceAtLeast(1)
+                val placeable = measurable.measure(Constraints.fixed(w, h))
+                layout(w, h) { placeable.place(0, 0) }
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column {
-                Text(
-                    text = call.callerName,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-                Text(
-                    text = if (call.isRinging) "Gelen arama..." else "Görüşmede (${call.callDurationSeconds}s)",
-                    color = Color.Gray,
-                    fontSize = 12.sp
-                )
+            .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
+            .islandSurface(cfg, body, shape, cornerT)
+            .pointerInput(Unit) {
+                // Dokunma + basılı tutma. Ada küçük olduğu için hızlı dokunuşta parmak kenardan kayıp çıkabiliyordu
+                // ve standart algılayıcı bunu iptal ediyordu; burada parmak ada dışına çıksa da ~40 dp'ye kadar
+                // dokunuş sayılır. Daha fazla sürüklenirse iptal edilir.
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val slop = 40.dp.toPx()
+                    var outcome = 0      // 0 = basılı tutma, 1 = dokunma, 2 = iptal
+                    withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        while (true) {
+                            val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            if (change == null || change.isConsumed) { outcome = 2; break }
+                            if (!change.pressed) { outcome = 1; break }
+                            if ((change.position - down.position).getDistance() > slop) { outcome = 2; break }
+                        }
+                    }
+                    when (outcome) {
+                        0 -> {
+                            longPressNow()
+                            do {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == down.id }
+                            } while (c != null && c.pressed)
+                        }
+                        1 -> tapNow()
+                    }
+                }
+            },
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        // Albüm kapağı arka planı: ada içini kaplar, yazıların okunması için hafif karartılır
+        val backdropArt = media?.art
+        if (cfg.artBgEnabled && backdropArt != null && bgBoth == null) {
+            ArtBackdrop(backdropArt, cfg.artBgCompact, progress)
+        }
+        // Galeriden seçilen arka plan: albüm arka planının üstünde, içeriğin altında
+        if (bgBoth != null || bgCompact != null || bgExpanded != null) {
+            CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
+        }
+
+        if (panelVisible) {
+            Box(
+                Modifier
+                    .requiredSize(geo.ew, geo.eh)
+                    .graphicsLayer { alpha = ((progress.mean - 0.45f) / 0.55f).coerceIn(0f, 1f) }
+            ) {
+                when (content) {
+                    is IslandContent.Notif -> NotifContent(content, accent, rb)
+                    is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
+                    IslandContent.Assistant -> AssistantOrb()
+                    is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
+                    IslandContent.Idle -> Unit
+                }
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            // Kırmızı Reddet Butonu
-            IconButton(
-                onClick = { IslandBus.sendCall(CallCommand.Reject) },
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFFFF3B30))
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CallEnd,
-                    contentDescription = "Reddet",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+        if (content is IslandContent.Media && compactVisible) {
+            // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
+                val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
+                val shownArt = customArt ?: content.art
+                shownArt?.let { art ->
+                    Image(
+                        bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
+                        filterQuality = FilterQuality.Medium,
+                        modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp)
+                            .size(artSize).clip(RoundedCornerShape(7.dp)).then(fade),
+                    )
+                }
+                if (compactLyrics && cfg.lyricsEnabled && cfg.lyricsCompact && lyrics is LyricsState.Ready) {
+                    // Albüm kapağı ile equalizer arasındaki orta boşluk
+                    val startPad = if (shownArt != null) 8.dp + artSize + 8.dp else 14.dp
+                    val endPad = 10.dp + 23.dp + 8.dp
+                    CompactLyrics(
+                        cfg, lyrics, frame,
+                        Modifier.align(Alignment.TopCenter).padding(start = startPad, end = endPad)
+                            .fillMaxWidth().height(geo.ch).then(fade),
+                        artColor = content.artColor,
+                    )
+                }
+                Box(Modifier.align(Alignment.CenterEnd).padding(end = 10.dp).then(fade)) {
+                    if (content.playing) Equalizer(eqColor, rainbow = rb)
+                    else Box(Modifier.size(6.dp).background(Color.White.copy(alpha = 0.40f), CircleShape))
+                }
+
+            }
+        }
+    }
+}
+
+/** Kapağı ada içine net (bulanıklaştırılmamış) çizer; yazılar okunsun diye üstüne koyu katman biner. */
+@Composable
+private fun ArtBackdrop(art: ImageBitmap, showInCompact: Boolean, progress: IslandProgress) {
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            // Kapalı adada kapalıysa: ada açılırken belirir, küçülürken solar
+            alpha = if (showInCompact) 1f else ((progress.mean - 0.25f) / 0.6f).coerceIn(0f, 1f)
+        }
+    ) {
+        Image(
+            bitmap = art, contentDescription = null, contentScale = ContentScale.Crop,
+            filterQuality = FilterQuality.Low, modifier = Modifier.fillMaxSize(),
+        )
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.50f)))
+    }
+}
+
+/**
+ * Galeriden seçilen fotoğraf(lar) ada içini kaplar.
+ * - Tek fotoğraf: ada büyürken/küçülürken kesintisiz ölçeklenir.
+ * - Ayrı fotoğraflar: kapalı hal ve açık hal kendi boyutunda çizilir, geçişte çapraz solar.
+ *   Bir hal için fotoğraf seçilmemişse o halde özel arka plan çizilmez.
+ */
+@Composable
+private fun CustomBackdrop(
+    both: ImageBitmap?, compact: ImageBitmap?, expanded: ImageBitmap?,
+    dim: Float, geo: Geo, progress: IslandProgress,
+) {
+    @Composable
+    fun Pic(img: ImageBitmap, modifier: Modifier) {
+        Box(modifier) {
+            Image(
+                bitmap = img, contentDescription = null, contentScale = ContentScale.Crop,
+                filterQuality = FilterQuality.Medium, modifier = Modifier.fillMaxSize(),
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = dim.coerceIn(0f, 0.9f))))
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
+        if (both != null) {
+            Pic(both, Modifier.fillMaxSize())
+        } else {
+            if (compact != null) {
+                Pic(
+                    compact,
+                    Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter).graphicsLayer {
+                        // Açık ada için fotoğraf varsa altta sabit kalır (üstüne açık fotoğraf biner), yoksa açılırken solar
+                        alpha = if (expanded != null) 1f else (1f - progress.mean * 2f).coerceIn(0f, 1f)
+                    },
                 )
             }
-            // Yeşil Yanıtla Butonu
-            IconButton(
-                onClick = { IslandBus.sendCall(CallCommand.Answer) },
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF34C759))
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Call,
-                    contentDescription = "Kabul Et",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
+            if (expanded != null) {
+                Pic(
+                    expanded,
+                    Modifier.requiredSize(geo.ew, geo.eh).align(Alignment.TopCenter).graphicsLayer {
+                        alpha = (progress.mean / 0.6f).coerceIn(0f, 1f)
+                    },
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle?) {
+    val iconShape = RoundedCornerShape(13.dp)
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        val icon = c.icon
+        if (icon != null) {
+            Image(
+                bitmap = icon, contentDescription = null,
+                modifier = Modifier.size(46.dp).clip(iconShape)
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), iconShape),
+            )
+        } else {
+            Box(Modifier.size(46.dp).background(accent, iconShape), contentAlignment = Alignment.Center) {
+                Text(
+                    c.title.trim().take(1).uppercase().ifEmpty { "•" },
+                    color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    modifier = Modifier.rainbowFill(rb, 0.dp),
+                )
+            }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            if (c.title.isNotBlank()) {
+                Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+            }
+            if (c.text.isNotBlank()) {
+                Text(c.text, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp, lineHeight = 18.sp,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
         }
     }

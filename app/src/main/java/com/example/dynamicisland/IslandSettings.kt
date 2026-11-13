@@ -13,108 +13,149 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlin.math.ceil
 
-const val GLOW_PAD_DP = 14f
-const val BOUNCE_PAD_DP = 16f
-const val FAV_COLUMNS = 4
-const val FAV_ROW_DP = 78f
-const val MAX_FAV = 8
+const val GLOW_PAD_DP = 14f     // parıltı için pencere kenar boşluğu
+const val BOUNCE_PAD_DP = 16f   // "Zıplamalı" animasyonun taşma payı
+const val FAV_COLUMNS = 4       // favori panelinde bir satırdaki uygulama sayısı
+const val FAV_ROW_DP = 78f      // favori panelinde bir satırın yüksekliği
+const val MAX_FAV = 8           // en fazla seçilebilecek favori uygulama
 
 @Immutable
 data class IslandSettings(
+    // Kapalı (küçük) hal
     val compactWidthDp: Float = 120f,
     val compactHeightDp: Float = 32f,
+    // Açık hal
     val expandedWidthDp: Float = 372f,
     val expandedHeightDp: Float = 84f,
+    // Konum ince ayarı
     val offsetXDp: Float = 0f,
     val offsetYDp: Float = 0f,
+    // Renk
     val accentArgb: Int = 0xFF0A84FF.toInt(),
-    val dynamicColor: Boolean = true,
+    val dynamicColor: Boolean = true,        // albüm kapağından renk
+    // Albüm kapağı arka planı (müzik çalarken adanın içi)
     val artBgEnabled: Boolean = true,
-    val artBgCompact: Boolean = true,
+    val artBgCompact: Boolean = true,        // kapalı adada da; kapalıysa yalnızca açık adada
+    // Özel arka plan (galeriden): adanın içi seçilen fotoğrafla dolar
     val customBgEnabled: Boolean = false,
-    val customBgSeparate: Boolean = false,
-    val customBgDim: Float = 0.30f,
-    val customBgBothUri: String = "",
+    val customBgSeparate: Boolean = false,   // false: tek fotoğraf kapalı + açık ada; true: her hal için ayrı fotoğraf
+    val customBgDim: Float = 0.30f,          // yazıların okunması için karartma
+    val customBgBothUri: String = "",        // boş = fotoğraf seçilmedi; aksi halde galerideki fotoğrafın adresi (kopyalanmaz)
     val customBgCompactUri: String = "",
     val customBgExpandedUri: String = "",
+    // Özel albüm kapağı (galeriden): adadaki kapak yerine bu fotoğraf gösterilir
     val customArtEnabled: Boolean = false,
     val customArtUri: String = "",
+    // Liquid Glass
     val glassEnabled: Boolean = false,
     val glassAlpha: Float = 0.55f,
     val blurRadiusPx: Int = 40,
+    // Sıvı cam (kırılma shader'ı + derinlik + speküler); cam efekti açıkken seçilebilir
     val liquidEnabled: Boolean = false,
-    val liquidRefraction: Float = 0.6f,
-    val liquidDispersion: Float = 0.5f,
-    val liquidSpecular: Float = 0.8f,
+    val liquidRefraction: Float = 0.6f,      // kenarda içeriğin bükülme miktarı
+    val liquidDispersion: Float = 0.5f,      // kenarda renk ayrışması
+    val liquidSpecular: Float = 0.8f,        // parlama / yansıma şiddeti
+    // Parıltı
     val glowEnabled: Boolean = true,
     val glowIntensity: Float = 0.6f,
+    // İlerleme çubuğu parıltısı (genişletilmiş müzik paneli)
     val progressGlowEnabled: Boolean = true,
-    val progressGlowArtColor: Boolean = true,
+    val progressGlowArtColor: Boolean = true,     // renk albüm kapağından alınsın (kapak yoksa progressGlowColorArgb)
     val progressGlowColorArgb: Int = 0xFF0A84FF.toInt(),
     val progressGlowIntensity: Float = 0.7f,
-    val progressGlowTipOnly: Boolean = false,
-    val progressGlowInside: Boolean = false,
-    val likeArtColor: Boolean = false,
+    val progressGlowTipOnly: Boolean = false,     // false: çubuğun tamamında, true: yalnızca ucunda (her zaman çubuğun içinde)
+    val progressGlowInside: Boolean = false,      // tüm çubuk modunda: parıltı çubuğun dışına taşmasın, içinde kalsın
+    // Beğeni (kalp) düğmesi
+    val likeArtColor: Boolean = false,            // beğenilince kalp albüm kapağı renginde olsun (kapak yoksa likeColorArgb)
     val likeColorArgb: Int = 0xFFFF2D6F.toInt(),
+    // Çerçeve
     val borderEnabled: Boolean = false,
     val borderColorArgb: Int = 0xFFFFFFFF.toInt(),
     val borderWidthDp: Float = 1f,
+    // Animasyon
     val animEnabled: Boolean = true,
-    val animStyle: Int = 0,
-    val showIdle: Boolean = false,
-    val incomingCallEnabled: Boolean = true, // Gelen arama ayarı
+    val animStyle: Int = 0,                  // 0 Yaylı, 1 Yumuşak, 2 Hızlı, 3 Zıplamalı, 4 Sıvı
+
+    // Görünürlük
+    val showIdle: Boolean = false,           // müzik/bildirim yokken de ada görünsün
+
+    // Favori uygulamalar (boştayken ada genişleyip seçilen uygulamaları gösterir)
     val favoritesEnabled: Boolean = false,
-    val favoritesTrigger: Int = 0,
-    val favoritePkgs: String = "",
-    val favoriteLaunchSpeed: Float = 1f,
-    val notifTapOpens: Boolean = true,
-    val notifLaunchAnim: Boolean = true,
-    val favoriteLaunchAnim: Boolean = true,
+    val favoritesTrigger: Int = 0,           // 0 = dokununca, 1 = basılı tutunca
+    val favoritePkgs: String = "",           // paket adları, virgülle ayrılmış (sıra korunur)
+    val favoriteLaunchSpeed: Float = 1f,     // açılış animasyonu hızı (1 = normal, 2 = iki kat hızlı)
+    val notifTapOpens: Boolean = true,       // adadaki bildirime dokununca uygulama açılsın
+    val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
+    val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
+
+    // Google Asistan / Gemini animasyonu
     val assistantEnabled: Boolean = true,
     val assistantWidthDp: Float = 150f,
     val assistantHeightDp: Float = 112f,
+
+    // Gökkuşağı modu
     val rainbowEnabled: Boolean = false,
-    val rainbowAlpha: Float = 0.85f,
+    val rainbowAlpha: Float = 0.85f,         // gökkuşağının saydamlığı (1 = tam opak)
+
+    // ---------------------------------------------------------- Şarkı sözleri
     val lyricsEnabled: Boolean = true,
-    val lyricsInPanel: Boolean = true,
-    val lyricsCompact: Boolean = true,
-    val lyricsOutside: Boolean = false,
+    val lyricsInPanel: Boolean = true,       // genişletilmiş adanın içinde
+    val lyricsCompact: Boolean = true,       // kapalı adanın içinde (ortada)
+    val lyricsOutside: Boolean = false,      // adanın dışında, adayı açmadan
+    // Boyutlar
     val lyricsPanelSizeSp: Float = 17f,
     val lyricsPanelLines: Int = 2,
     val lyricsCompactSizeSp: Float = 12f,
-    val lyricsCompactWidthDp: Float = 210f,
+    val lyricsCompactWidthDp: Float = 210f,  // sözler görünürken kapalı adanın genişliği
     val lyricsOutsideSizeSp: Float = 20f,
     val lyricsOutsideLines: Int = 2,
     val lyricsOutsideWidthDp: Float = 320f,
     val lyricsOutsideXDp: Float = 0f,
-    val lyricsOutsideYDp: Float = 96f,
+    val lyricsOutsideYDp: Float = 96f,       // ekranın üstünden uzaklık
+    // Renk / dolum / senkron
     val lyricsColorArgb: Int = 0xFFFFFFFF.toInt(),
-    val lyricsDynamicColor: Boolean = true,
-    val lyricsDimAlpha: Float = 0.38f,
-    val lyricsFillEnabled: Boolean = true,
-    val lyricsOffsetMs: Int = 0,
+    val lyricsDynamicColor: Boolean = true,  // söz rengi albüm kapağından alınsın (kapak yoksa lyricsColorArgb)
+    val lyricsDimAlpha: Float = 0.38f,       // henüz söylenmemiş kısmın opaklığı
+    val lyricsFillEnabled: Boolean = true,   // söylendikçe dolsun
+    val lyricsOffsetMs: Int = 0,             // + ise sözler daha erken görünür
+    // Parıltı
     val lyricsGlowEnabled: Boolean = true,
     val lyricsGlowLevel: Float = 0.5f,
+    // Satır geçiş animasyonu
     val lyricsAnimEnabled: Boolean = true,
-    val lyricsAnimStyle: Int = 0,
+    val lyricsAnimStyle: Int = 0,            // 0 Solma, 1 Yukarı kayma, 2 Yakınlaşma, 3 Yaylı zıplama, 4 Yatay kayma, 5 Anında, 6 Adadan çıkış, 7 Adadan tek tek, 8 Soldan açılma, 9 Çevirme, 10 Odak çekme
     val lyricsAnimMs: Int = 380,
 ) {
+    /** Pencerenin ada etrafında bırakacağı pay (parıltı / zıplama taşması için). */
     fun windowPadDp(): Float = maxOf(
         if (glowEnabled) GLOW_PAD_DP else 0f,
         if (animEnabled && animStyle == 3) BOUNCE_PAD_DP else 0f,
     )
+
+    /** Seçili favori uygulamaların paket adları (en fazla [MAX_FAV], tekrarsız). */
     fun favoritePkgList(): List<String> = favoritePkgs.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MAX_FAV)
+
+    /** Özellik gerçekten çalışabilir mi: açık, ada boştayken görünür ve en az bir uygulama seçili. */
     fun favoritesReady(): Boolean = favoritesEnabled && showIdle && favoritePkgList().isNotEmpty()
+
+    /** Favori panelinin yüksekliği: kamera bölgesi + uygulama satırları. */
     fun favoritesHeightDp(count: Int): Float {
         val rows = maxOf(1, ceil(count / FAV_COLUMNS.toFloat()).toInt())
         return compactHeightDp + 6f + rows * FAV_ROW_DP + 8f
     }
+
+    /** Geçiş animasyonunun yaklaşık bitiş süresi (pencere boyutunu ona göre değiştiririz). */
     fun settleMs(): Long = if (!animEnabled) 60L else when (animStyle) {
         0 -> 520L; 1 -> 560L; 2 -> 300L; 3 -> 750L; else -> 650L
     }
-    fun lyricsBlockDp(): Float = ceil(lyricsPanelSizeSp * 1.3f * lyricsPanelLines) + 10f
-    fun musicExtraDp(): Float = 52f + if (lyricsEnabled && lyricsInPanel) lyricsBlockDp() else 0f
 
+    /** Genişletilmiş panelde şarkı sözü satırına ayrılan sabit yükseklik. */
+    fun lyricsBlockDp(): Float = ceil(lyricsPanelSizeSp * 1.3f * lyricsPanelLines) + 10f
+
+    /** Müzik panelinin temel yüksekliğine eklenen miktar (sözler açıksa söz alanı dahil). */
+    fun musicExtraDp(): Float = MUSIC_EXTRA_DP + if (lyricsEnabled && lyricsInPanel) lyricsBlockDp() else 0f
+
+    /** Yalnızca şarkı sözü ayarlarını varsayılana döndürür. */
     fun withLyricsDefaults(): IslandSettings {
         val d = IslandSettings()
         return copy(
@@ -124,7 +165,8 @@ data class IslandSettings(
             lyricsOutsideSizeSp = d.lyricsOutsideSizeSp, lyricsOutsideLines = d.lyricsOutsideLines,
             lyricsOutsideWidthDp = d.lyricsOutsideWidthDp, lyricsOutsideXDp = d.lyricsOutsideXDp,
             lyricsOutsideYDp = d.lyricsOutsideYDp, lyricsColorArgb = d.lyricsColorArgb, lyricsDynamicColor = d.lyricsDynamicColor,
-            lyricsDimAlpha = d.lyricsDimAlpha, lyricsFillEnabled = d.lyricsFillEnabled, lyricsOffsetMs = d.lyricsOffsetMs,
+            lyricsDimAlpha = d.lyricsDimAlpha,
+            lyricsFillEnabled = d.lyricsFillEnabled, lyricsOffsetMs = d.lyricsOffsetMs,
             lyricsGlowEnabled = d.lyricsGlowEnabled, lyricsGlowLevel = d.lyricsGlowLevel,
             lyricsAnimEnabled = d.lyricsAnimEnabled, lyricsAnimStyle = d.lyricsAnimStyle, lyricsAnimMs = d.lyricsAnimMs,
         )
@@ -155,7 +197,6 @@ class SettingsRepository(context: Context) {
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
         val IDLE = booleanPreferencesKey("idle")
-        val CALL_ON = booleanPreferencesKey("call_on")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
         val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
@@ -219,7 +260,6 @@ class SettingsRepository(context: Context) {
             animEnabled = p[K.ANIM] ?: d.animEnabled,
             animStyle = p[K.ANIM_S] ?: d.animStyle,
             showIdle = p[K.IDLE] ?: d.showIdle,
-            incomingCallEnabled = p[K.CALL_ON] ?: d.incomingCallEnabled,
             favoritesEnabled = p[K.FAV_ON] ?: d.favoritesEnabled,
             favoritesTrigger = p[K.FAV_TRIG] ?: d.favoritesTrigger,
             favoritePkgs = p[K.FAV_PKGS] ?: d.favoritePkgs,
@@ -280,7 +320,6 @@ class SettingsRepository(context: Context) {
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
             it[K.IDLE] = s.showIdle
-            it[K.CALL_ON] = s.incomingCallEnabled
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
             it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_ANIM] = s.notifLaunchAnim
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
