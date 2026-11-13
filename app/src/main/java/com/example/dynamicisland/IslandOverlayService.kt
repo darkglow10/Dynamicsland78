@@ -539,7 +539,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             k.expanded -> {
                 setBlur(false, s)
                 setGeometry(ew + 2 * pad, eh + 2 * pad, xExp, y)
-                if (blurOk) { delay(settle); setBlur(true, s) }
+                if (blurOk && !assistant) { delay(settle); setBlur(true, s) }
             }
             else -> {
                 setBlur(false, s)

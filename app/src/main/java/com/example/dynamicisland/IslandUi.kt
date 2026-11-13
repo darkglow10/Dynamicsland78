@@ -31,6 +31,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -286,15 +287,15 @@ private fun DrawScope.drawGlassRim() {
 
 /** Renk State olarak taşınır, yalnızca çizim fazında okunur => animasyonda recomposition yok. */
 @Composable
-private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>): Modifier {
+private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape): Modifier {
     val liquid = cfg.glassEnabled && cfg.liquidEnabled
-    var m = this.clip(PillShape).drawBehind { drawRect(body.value) }
+    var m = this.clip(shape).drawBehind { drawRect(body.value) }
     if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular) }
     if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion)
     else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase() }
     if (cfg.borderEnabled) {
         val rbBorder = rememberRainbowStyle(cfg)
-        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), PillShape)
+        m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), shape)
         else m.drawWithContent {
             drawContent()
             // Şekil kırpıldığı için çizginin yalnızca iç yarısı görünür; bu yüzden 2x kalınlık
@@ -346,6 +347,10 @@ fun IslandPill(
     onCommand: (MediaCommand) -> Unit,
     onOutput: () -> Unit,
 ) {
+    // Asistan modunda: tam elips, düz siyah gövde; cam / çerçeve / parıltı kapalı (kendi ışıması var)
+    val assistant = content is IslandContent.Assistant
+    val cfg = if (assistant) cfg.copy(glassEnabled = false, liquidEnabled = false, borderEnabled = false, glowEnabled = false) else cfg
+    val shape: Shape = if (assistant) AssistantShape(progress.mean) else PillShape
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
     val rb = rememberRainbowStyle(cfg)
     val media = content as? IslandContent.Media
@@ -375,7 +380,7 @@ fun IslandPill(
                 layout(w, h) { placeable.place(0, 0) }
             }
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
-            .islandSurface(cfg, body)
+            .islandSurface(cfg, body, shape)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap),
         contentAlignment = Alignment.TopCenter,
     ) {
