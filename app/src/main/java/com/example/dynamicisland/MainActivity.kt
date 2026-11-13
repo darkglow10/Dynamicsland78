@@ -28,7 +28,11 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -203,7 +207,7 @@ private fun AppRoot() {
         }
         BottomFloatingTabs(
             labels = listOf("Kurulum", "Ayarlar", "Sözler"),
-            glyphs = listOf("◉", "Aa", "≡"),
+            glyphs = listOf("◉", "≡", "Aa"),   // Kurulum, Ayarlar, Sözler
             selected = tab,
             onSelect = { tab = it },
             modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -288,10 +292,38 @@ private fun BottomFloatingTabs(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
-                    Text(glyphs.getOrElse(i) { "•" }, color = fg, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp)
+                    TabGlyph(glyphs.getOrElse(i) { "•" }, fg)
                     Text(label, color = fg, fontSize = 11.sp, fontWeight = if (sel) FontWeight.SemiBold else FontWeight.Medium)
                 }
             }
+        }
+    }
+}
+
+/**
+ * Sekme simgesi. Üç simge de aynı yükseklikte (28 dp) bir kutuya konur, böylece alttaki yazılar hizalı kalır.
+ * "◉" ve "≡" yazı karakteri yerine çizilir (font'a göre küçük kalıyordu); "Aa" yazı olarak kalır.
+ */
+@Composable
+private fun TabGlyph(glyph: String, color: Color) {
+    Box(Modifier.height(28.dp), contentAlignment = Alignment.Center) {
+        when (glyph) {
+            "◉" -> Canvas(Modifier.size(24.dp)) {
+                val sw = 2.4.dp.toPx()
+                drawCircle(color, radius = size.minDimension / 2f - sw / 2f, style = Stroke(width = sw))
+                drawCircle(color, radius = 4.6.dp.toPx())
+            }
+            "≡" -> Canvas(Modifier.size(width = 26.dp, height = 24.dp)) {
+                val sw = 2.8.dp.toPx()
+                val pad = sw / 2f
+                listOf(0.2f, 0.5f, 0.8f).forEach { f ->
+                    drawLine(
+                        color, Offset(pad, size.height * f), Offset(size.width - pad, size.height * f),
+                        strokeWidth = sw, cap = StrokeCap.Round,
+                    )
+                }
+            }
+            else -> Text(glyph, color = color, fontSize = 22.sp, fontWeight = FontWeight.Bold, lineHeight = 24.sp)
         }
     }
 }
