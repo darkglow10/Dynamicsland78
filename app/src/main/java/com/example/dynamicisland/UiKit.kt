@@ -5,32 +5,43 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -122,39 +133,87 @@ fun SwitchRow(title: String, desc: String? = null, checked: Boolean, onChange: (
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Dokunulan x konumunu (px) aralıktaki değere çevirir. Düğme yarıçapı kadar kenar payı bırakır. */
+private fun sliderValueAt(x: Float, widthPx: Float, thumbPx: Float, start: Float, end: Float): Float {
+    val usable = (widthPx - thumbPx).coerceAtLeast(1f)
+    val f = ((x - thumbPx / 2f) / usable).coerceIn(0f, 1f)
+    return start + (end - start) * f
+}
+
+/**
+ * Özel kaydırıcı: kesintisiz yuvarlak uçlu çubuk (beyaz dolu kısım + yarı saydam kalan kısım),
+ * üzerinde çubuğu kesmeyen cam efektli büyük daire düğme. Material Slider kullanılmaz.
+ */
 @Composable
 fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, valueText: String, onChange: (Float) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val inactive = Color.White.copy(alpha = 0.22f)
+    val thumb = 36.dp
+    val trackH = 8.dp
+    val start = range.start
+    val end = range.endInclusive
+    val fraction = if (end > start) ((value - start) / (end - start)).coerceIn(0f, 1f) else 0f
+
+    var dragging by remember { mutableStateOf(false) }
+    val thumbScale by animateFloatAsState(
+        if (dragging) 1.12f else 1f,
+        spring(dampingRatio = 0.6f, stiffness = Spring.StiffnessMedium), label = "sliderThumb",
+    )
+    val latestOnChange by rememberUpdatedState(onChange)
+    val latestStart by rememberUpdatedState(start)
+    val latestEnd by rememberUpdatedState(end)
+
     Column {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(label, color = cs.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f, fill = false))
             Spacer(Modifier.width(12.dp))
             Text(valueText, color = cs.onSurfaceVariant, fontSize = 12.sp, fontWeight = FontWeight.Medium)
         }
-        Slider(
-            value = value.coerceIn(range), onValueChange = onChange, valueRange = range,
-            modifier = Modifier.fillMaxWidth().height(28.dp),
-            colors = SliderDefaults.colors(
-                thumbColor = Color(0xFFD2BBA6),
-                activeTrackColor = Color.White,
-                inactiveTrackColor = inactive,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-                disabledThumbColor = Color(0xFFD2BBA6),
-                disabledActiveTrackColor = Color.White,
-                disabledInactiveTrackColor = inactive,
-            ),
-            thumb = {
-                Box(
-                    Modifier.size(20.dp)
-                        .shadow(2.dp, CircleShape)
-                        .background(Color(0xFFD2BBA6), CircleShape)
-                        .border(3.dp, Color(0xFF5F4A3B), CircleShape),
-                )
-            },
-        )
+        BoxWithConstraints(
+            Modifier.fillMaxWidth().height(44.dp)
+                .semantics {
+                    progressBarRangeInfo = ProgressBarRangeInfo(value.coerceIn(start, end), range)
+                    setProgress { target -> latestOnChange(target.coerceIn(start, end)); true }
+                }
+                .pointerInput(Unit) {
+                    val thumbPx = thumb.toPx()
+                    detectTapGestures { pos ->
+                        latestOnChange(sliderValueAt(pos.x, size.width.toFloat(), thumbPx, latestStart, latestEnd))
+                    }
+                }
+                .pointerInput(Unit) {
+                    val thumbPx = thumb.toPx()
+                    detectHorizontalDragGestures(
+                        onDragStart = { pos ->
+                            dragging = true
+                            latestOnChange(sliderValueAt(pos.x, size.width.toFloat(), thumbPx, latestStart, latestEnd))
+                        },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false },
+                    ) { change, _ ->
+                        change.consume()
+                        latestOnChange(sliderValueAt(change.position.x, size.width.toFloat(), thumbPx, latestStart, latestEnd))
+                    }
+                },
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            val travel = maxWidth - thumb
+            // Boş kısım (yarı saydam)
+            Box(Modifier.fillMaxWidth().height(trackH).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)))
+            // Dolu kısım: düğmenin merkezine kadar uzanır
+            Box(Modifier.width(thumb / 2 + travel * fraction).height(trackH).clip(CircleShape).background(Color.White))
+            // Cam düğme
+            Box(
+                Modifier.offset(x = travel * fraction).size(thumb)
+                    .graphicsLayer { scaleX = thumbScale; scaleY = thumbScale }
+                    .clip(CircleShape)
+                    .background(Color(0xFF3A2E1E).copy(alpha = 0.35f))
+                    .border(
+                        1.5.dp,
+                        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.8f), Color.White.copy(alpha = 0.2f))),
+                        CircleShape,
+                    ),
+            )
+        }
     }
 }
 
