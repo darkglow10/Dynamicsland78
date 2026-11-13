@@ -34,6 +34,8 @@ class LaunchSpec(val cx: Float, val top: Float, val w: Float, val h: Float, val 
 private const val BASE_MS = 650            // hız 1x iken adanın altından çıkıp ekranı kaplama süresi
 private const val HOLD_MS = 350L           // ekran kaplandıktan sonra siyahın bekleme süresi (uygulama açılırken)
 private const val FADE_MS = 240            // siyahın kalkması
+private const val CORNER_DP = 44f          // büyürken köşe yuvarlaklığı (telefon ekran köşesine yakın)
+private const val MARGIN_DP = 20f          // son boyutun ekranı taşma payı (köşe yarıçapının en az ~%30'u olmalı)
 private const val START_W_DP = 46f         // adanın altından çıkan küçük şeklin başlangıç genişliği
 private const val START_H_DP = 30f         // ... ve yüksekliği
 
@@ -68,7 +70,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
             .graphicsLayer { alpha = fade.value }
     ) {
         val d = density
-        val m = 24f                                    // taşma payı: kenarda boşluk kalmasın
+        val m = MARGIN_DP * d                          // ekran dışına taşma payı: yuvarlak köşeler ekranın dışında kalır
         val sw = size.width + 2 * m
         val sh = size.height + 2 * m
         val t = a.value
@@ -83,7 +85,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
         val cx = cx0 + (size.width / 2f - cx0) * t
         val cy = cy0 + (size.height / 2f - cy0) * t
         val alpha = (t * 12f).coerceIn(0f, 1f)         // ilk anda yumuşakça belirir
-        val radius = minOf(26f * d * (1f - t), minOf(w, h) / 2f)
+        val radius = minOf(CORNER_DP * d, minOf(w, h) / 2f)   // köşe yarıçapı büyürken sabit kalır: sivrilme olmaz
 
         translate(-origin.x, -origin.y) {
             if (t >= 1f) {
