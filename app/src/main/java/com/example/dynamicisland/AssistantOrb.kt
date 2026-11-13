@@ -39,19 +39,25 @@ import kotlin.math.sin
  * Normal adadan videodaki yumuşak köşeli şekle akıcı geçiş.
  * t = 0 -> normal ada, t = 1 -> asistan şekli.
  */
-class AssistantShape(private val t: Float, private val baseRadiusDp: Float = 36f) : Shape {
+class AssistantShape(private val t: Float) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val base = min(baseRadiusDp * density.density, size.height / 2f)
-        val k = t.coerceIn(0f, 1f)
-        val rx = base + (size.width * CORNER_X - base) * k
-        val ry = base + (size.height * CORNER_Y - base) * k
-        return Outline.Rounded(RoundRect(0f, 0f, size.width, size.height, CornerRadius(rx, ry)))
+        val r = islandCornerPx(size.width, size.height, density.density, t)
+        return Outline.Rounded(RoundRect(0f, 0f, size.width, size.height, CornerRadius(r, r)))
     }
+}
 
-    private companion object {
-        const val CORNER_X = 0.36f   // 0.5 = tam elips, küçüldükçe daha köşeli
-        const val CORNER_Y = 0.42f
-    }
+private const val ASSISTANT_CORNER = 0.42f   // köşe yarıçapı / yükseklik (0.5 = hap şekli, küçüldükçe daha köşeli)
+
+/**
+ * Adanın o anki köşe yarıçapı (px). cornerT < 0: normal ada (36dp'lik hap).
+ * 0..1: normal adadan asistan şekline geçiş. Şekil, cam / sıvı cam çizimleri ve shader'lar hep bunu kullanır,
+ * böylece hepsi aynı kenarı izler.
+ */
+fun islandCornerPx(w: Float, h: Float, density: Float, cornerT: Float): Float {
+    val base = min(36f * density, h / 2f)
+    if (cornerT < 0f) return base
+    val target = min(h * ASSISTANT_CORNER, w / 2f)
+    return base + (target - base) * cornerT.coerceIn(0f, 1f)
 }
 
 // Videodaki renk geçişi: mavi -> mor -> pembe/kırmızı -> turuncu -> sarı -> beyaz -> cyan -> mavi (döngüsel)

@@ -184,10 +184,10 @@ private fun bodyColorFor(cfg: IslandSettings, art: Color?, accent: Color): Color
  *  2) sol üstte yumuşak speküler parlama
  *  3) kenarlara doğru incelen iç ışık halkaları (lens / kırılma hissi)
  */
-private fun DrawScope.drawGlassBase() {
+private fun DrawScope.drawGlassBase(cornerT: Float = -1f) {
     val w = size.width; val h = size.height
     if (w <= 1f || h <= 1f) return
-    val r = min(GlassMaxRadius.toPx(), h / 2f)
+    val r = islandCornerPx(w, h, density, cornerT)
 
     drawRect(
         Brush.verticalGradient(
@@ -235,10 +235,10 @@ private fun DrawScope.drawGlassBase() {
  * Liquid Glass — içeriğin ÜSTÜNE çizilen ince kenar ışığı (specular rim):
  * sol-üstte parlak, ortada sönük, sağ-altta tekrar parlak; iOS'taki cam kenarı gibi.
  */
-private fun DrawScope.drawGlassRim() {
+private fun DrawScope.drawGlassRim(cornerT: Float = -1f) {
     val w = size.width; val h = size.height
     if (w <= 1f || h <= 1f) return
-    val r = min(GlassMaxRadius.toPx(), h / 2f)
+    val r = islandCornerPx(w, h, density, cornerT)
 
     val sw = 1.3.dp.toPx()
     val rim = Brush.linearGradient(
@@ -287,12 +287,12 @@ private fun DrawScope.drawGlassRim() {
 
 /** Renk State olarak taşınır, yalnızca çizim fazında okunur => animasyonda recomposition yok. */
 @Composable
-private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape): Modifier {
+private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shape: Shape = PillShape, cornerT: Float = -1f): Modifier {
     val liquid = cfg.glassEnabled && cfg.liquidEnabled
     var m = this.clip(shape).drawBehind { drawRect(body.value) }
-    if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular) }
-    if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion)
-    else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase() }
+    if (liquid) m = m.drawBehind { drawLiquidBase(cfg.liquidSpecular, cornerT) }
+    if (liquid) m = m.liquidBackdrop(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
+    else if (cfg.glassEnabled) m = m.drawBehind { drawGlassBase(cornerT) }
     if (cfg.borderEnabled) {
         val rbBorder = rememberRainbowStyle(cfg)
         m = if (rbBorder == null) m.border(cfg.borderWidthDp.dp, Color(cfg.borderColorArgb), shape)
@@ -306,10 +306,10 @@ private fun Modifier.islandSurface(cfg: IslandSettings, body: State<Color>, shap
         }
     }
     // Kenar ışığı, içeriğin (yazı/kapak) üstüne çizilir; kullanıcı çerçevesi yine de en üstte kalır
-    if (liquid) m = m.drawWithContent { drawContent(); drawLiquidRim(cfg.liquidSpecular) }
-    else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim() }
+    if (liquid) m = m.drawWithContent { drawContent(); drawLiquidRim(cfg.liquidSpecular, cornerT) }
+    else if (cfg.glassEnabled) m = m.drawWithContent { drawContent(); drawGlassRim(cornerT) }
     // En içte: yalnızca iç içerik (kapak, yazı, butonlar) kenarlarda bükülür (Android 13+)
-    if (liquid && !LiquidCapture.running) m = m.liquidRefraction(cfg.liquidRefraction, cfg.liquidDispersion)
+    if (liquid && !LiquidCapture.running) m = m.liquidRefraction(cfg.liquidRefraction, cfg.liquidDispersion, cornerT)
     return m
 }
 
@@ -347,10 +347,11 @@ fun IslandPill(
     onCommand: (MediaCommand) -> Unit,
     onOutput: () -> Unit,
 ) {
-    // Asistan modunda: tam elips, düz siyah gövde; cam / çerçeve / parıltı kapalı (kendi ışıması var)
+    // Asistan modunda: kendi şekli; cam ve sıvı cam ayarları uygulanır. Çerçeve / dış parıltı kapalı (şekle uymaz).
     val assistant = content is IslandContent.Assistant
-    val cfg = if (assistant) cfg.copy(glassEnabled = false, liquidEnabled = false, borderEnabled = false, glowEnabled = false) else cfg
-    val shape: Shape = if (assistant) AssistantShape(progress.mean) else PillShape
+    val cfg = if (assistant) cfg.copy(borderEnabled = false, glowEnabled = false) else cfg
+    val cornerT = if (assistant) progress.mean else -1f
+    val shape: Shape = if (assistant) AssistantShape(cornerT) else PillShape
     val accent = remember(cfg.accentArgb) { Color(cfg.accentArgb) }
     val rb = rememberRainbowStyle(cfg)
     val media = content as? IslandContent.Media
@@ -365,7 +366,9 @@ fun IslandPill(
     val bgExpanded = rememberCustomImage(CustomImages.Slot.BG_EXPANDED, if (bgOn && cfg.customBgSeparate) cfg.customBgExpandedUri else "")
     val customArt = rememberCustomImage(CustomImages.Slot.ART, if (cfg.customArtEnabled) cfg.customArtUri else "")
 
-    val body = animateColorAsState(bodyColorFor(cfg, artColor, accent), tween(450), label = "body")
+    // Asistanda cam gövde en az %60 koyu kalır: renk bantları koyu zeminde okunur
+    val bodyTarget = if (assistant && cfg.glassEnabled) Color.Black.copy(alpha = max(cfg.glassAlpha, 0.6f)) else bodyColorFor(cfg, artColor, accent)
+    val body = animateColorAsState(bodyTarget, tween(450), label = "body")
     val glow = animateColorAsState(artColor ?: accent, tween(450), label = "glow")
 
     val panelVisible by remember(progress) { derivedStateOf { max(progress.w.value, progress.h.value) > 0.01f } }
@@ -380,7 +383,7 @@ fun IslandPill(
                 layout(w, h) { placeable.place(0, 0) }
             }
             .islandGlow(cfg.glowEnabled, glow, cfg.glowIntensity)
-            .islandSurface(cfg, body, shape)
+            .islandSurface(cfg, body, shape, cornerT)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onTap),
         contentAlignment = Alignment.TopCenter,
     ) {

@@ -72,7 +72,7 @@ fun liquidRefractionSupported(): Boolean = Build.VERSION.SDK_INT >= 33
 
 @SuppressLint("NewApi")
 @Composable
-fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
+fun Modifier.liquidRefraction(refraction: Float, dispersion: Float, cornerT: Float = -1f): Modifier {
     if (Build.VERSION.SDK_INT < 33) return this
     val shader = remember { RuntimeShader(LIQUID_AGSL) }
     var sz by remember { mutableStateOf(IntSize.Zero) }
@@ -82,7 +82,7 @@ fun Modifier.liquidRefraction(refraction: Float, dispersion: Float): Modifier {
             val w = sz.width.toFloat()
             val h = sz.height.toFloat()
             if (w < 2f || h < 2f) return@graphicsLayer
-            val r = min(LiquidMaxRadius.toPx(), h / 2f)
+            val r = islandCornerPx(w, h, density, cornerT)
             shader.setFloatUniform("size", w, h)
             shader.setFloatUniform("radius", r)
             
@@ -148,7 +148,7 @@ half4 main(float2 fc) {
 
 @SuppressLint("NewApi")
 @Composable
-fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float): Modifier {
+fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float, cornerT: Float = -1f): Modifier {
     if (Build.VERSION.SDK_INT < 33) return this
     val shader = remember { RuntimeShader(BACKDROP_AGSL) }
     val view = LocalView.current
@@ -162,7 +162,7 @@ fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float): Modifier {
             if (w < 2f || h < 2f) return@drawBehind
             view.getLocationOnScreen(loc)
             val minDim = min(w, h)
-            val r = min(LiquidMaxRadius.toPx(), h / 2f)
+            val r = islandCornerPx(w, h, density, cornerT)
             shader.setInputShader("bg", f.shader)
             shader.setFloatUniform("size", w, h)
             shader.setFloatUniform("origin", loc[0] + pos[0], loc[1] + pos[1])
@@ -179,11 +179,11 @@ fun Modifier.liquidBackdrop(refraction: Float, dispersion: Float): Modifier {
         }
 }
 
-fun DrawScope.drawLiquidBase(specular: Float) {
+fun DrawScope.drawLiquidBase(specular: Float, cornerT: Float = -1f) {
     val w = size.width; val h = size.height
     if (w <= 1f || h <= 1f) return
     val k = specular.coerceIn(0f, 1.5f)
-    val r = min(LiquidMaxRadius.toPx(), h / 2f)
+    val r = islandCornerPx(w, h, density, cornerT)
 
     drawRect(
         Brush.verticalGradient(
@@ -242,11 +242,11 @@ fun DrawScope.drawLiquidBase(specular: Float) {
     }
 }
 
-fun DrawScope.drawLiquidRim(specular: Float) {
+fun DrawScope.drawLiquidRim(specular: Float, cornerT: Float = -1f) {
     val w = size.width; val h = size.height
     if (w <= 1f || h <= 1f) return
     val k = specular.coerceIn(0f, 1.5f)
-    val r = min(LiquidMaxRadius.toPx(), h / 2f)
+    val r = islandCornerPx(w, h, density, cornerT)
 
     val sw = 1.4.dp.toPx()
     drawRoundRect(
