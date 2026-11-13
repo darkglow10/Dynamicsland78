@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -147,7 +148,8 @@ private fun sliderValueAt(x: Float, widthPx: Float, thumbPx: Float, start: Float
 @Composable
 fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float>, valueText: String, onChange: (Float) -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val thumb = 36.dp
+    val thumbW = 30.dp   // düğme genişliği
+    val thumbH = 22.dp   // düğme yüksekliği (daha küçük ve yassı kapsül)
     val trackH = 8.dp
     val start = range.start
     val end = range.endInclusive
@@ -175,13 +177,13 @@ fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float
                     setProgress { target -> latestOnChange(target.coerceIn(start, end)); true }
                 }
                 .pointerInput(Unit) {
-                    val thumbPx = thumb.toPx()
+                    val thumbPx = thumbW.toPx()
                     detectTapGestures { pos ->
                         latestOnChange(sliderValueAt(pos.x, size.width.toFloat(), thumbPx, latestStart, latestEnd))
                     }
                 }
                 .pointerInput(Unit) {
-                    val thumbPx = thumb.toPx()
+                    val thumbPx = thumbW.toPx()
                     detectHorizontalDragGestures(
                         onDragStart = { pos ->
                             dragging = true
@@ -196,22 +198,20 @@ fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRange<Float
                 },
             contentAlignment = Alignment.CenterStart,
         ) {
-            val travel = maxWidth - thumb
+            val travel = maxWidth - thumbW
             // Boş kısım (yarı saydam)
             Box(Modifier.fillMaxWidth().height(trackH).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)))
             // Dolu kısım: düğmenin merkezine kadar uzanır
-            Box(Modifier.width(thumb / 2 + travel * fraction).height(trackH).clip(CircleShape).background(Color.White))
-            // Cam düğme
+            Box(Modifier.width(thumbW / 2 + travel * fraction).height(trackH).clip(CircleShape).background(Color.White))
+            // Cam düğme: renk tonu yok, LiquidGlass.kt'deki cam yüzey + kenar parlaması çizilir
             Box(
-                Modifier.offset(x = travel * fraction).size(thumb)
+                Modifier.offset(x = travel * fraction).size(thumbW, thumbH)
                     .graphicsLayer { scaleX = thumbScale; scaleY = thumbScale }
-                    .clip(CircleShape)
-                    .background(Color(0xFF3A2E1E).copy(alpha = 0.35f))
-                    .border(
-                        1.5.dp,
-                        Brush.verticalGradient(listOf(Color.White.copy(alpha = 0.8f), Color.White.copy(alpha = 0.2f))),
-                        CircleShape,
-                    ),
+                    .clip(CircleShape) // dikdörtgende tam kapsül (uçları yarım daire)
+                    .drawBehind {
+                        drawLiquidBase(specular = 0.8f)
+                        drawLiquidRim(specular = 0.9f)
+                    },
             )
         }
     }
