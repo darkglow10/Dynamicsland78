@@ -1,21 +1,20 @@
 package com.example.dynamicisland
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
-import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import android.accessibilityservice.AccessibilityServiceInfo
 import androidx.core.app.NotificationManagerCompat
 
 /**
- * İki iş yapar:
+ * Üç iş yapar:
  * 1) Adanın penceresine ev sahipliği yapar: TYPE_ACCESSIBILITY_OVERLAY durum çubuğunun üstünde
  *    durur ve dokunuş alır (normal uygulama overlay'i durum çubuğunun altında kalır).
  * 2) Yedek bildirim olayı: yalnızca TYPE_NOTIFICATION_STATE_CHANGED dinler. Bildirim erişimi
  *    (NotificationListener) açıksa çift bildirim olmaması için sessiz kalır.
+ * 3) Google Asistan / Gemini algılama: asistan penceresi açılınca / kapanınca [IslandEvent.AssistantChanged] yayınlar.
  */
 class IslandAccessibilityService : AccessibilityService() {
 
@@ -24,81 +23,60 @@ class IslandAccessibilityService : AccessibilityService() {
         /** Servis bağlanınca / kopunca overlay servisine haber verir (ana thread). */
         @Volatile var onChanged: (() -> Unit)? = null
 
-        /** Asistan / Gemini penceresini barındıran paketler. */
+        /** Asistan / Gemini arayüzünü barındıran paketler. Cihazında başka bir asistan varsa buraya ekle. */
         private val ASSISTANT_PKGS = setOf(
-            "com.google.android.googlequicksearchbox",
-            "com.google.android.apps.bard",
+            "com.google.android.googlequicksearchbox",   // Google uygulaması (Asistan + Gemini kaplaması)
+            "com.google.android.apps.bard",              // Gemini uygulaması
             "com.google.android.apps.googleassistant",
         )
-        private const val TAG = "IslandAssistant"
+        /** Asistan açıkken de olay üretebilen, asistanın kapandığı anlamına GELMEYEN paketler. */
+        private val IGNORED_PKGS = setOf("com.android.systemui")
     }
 
     private val handler = Handler(Looper.getMainLooper())
     private var assistantOn = false
-    private val checkRunnable = Runnable { checkAssistant() }
+    private var eventSaysOn = false      // pencere listesi alınamazsa olay tabanlı yedek
 
-    /**
-     * Ekranda Google / Gemini uygulamasına ait, TAM EKRAN OLMAYAN bir pencere varsa asistan çubuğu açıktır.
-     * Google uygulamasında yazı yazarken ya da kelime seçerken (klavye açıkken) çıkan küçük pencereler
-     * (seçim menüsü, tutamaçlar) yüzünden tetiklenmesin diye, klavye açıkken YENİ başlatma yapılmaz.
-     * Asistan zaten açıksa klavye açılması (Gemini'ye yazmak) animasyonu kapatmaz.
-     * Pencere bilgisi için erişilebilirlik yapılandırmasında canRetrieveWindowContent ve
-     * flagRetrieveInteractiveWindows gerekir.
-     */
-    private fun checkAssistant() {
-        runCatching {
-            val screenH = resources.displayMetrics.heightPixels
-            val r = Rect()
-            var imeVisible = false
-            var small = false
-            for (w in windows) {
-                if (w.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD) imeVisible = true
-                val pkg = w.root?.packageName?.toString() ?: continue
-                if (pkg !in ASSISTANT_PKGS) continue
-                w.getBoundsInScreen(r)
-                val full = r.height() >= screenH * 0.85f
-                if (!full) small = true
-                if (!assistantOn) Log.d(TAG, "pencere: pkg=$pkg type=${w.type} full=$full bounds=$r ime=$imeVisible")
+    private val check = object : Runnable {
+        override fun run() {
+            runCatching {
+                setAssistant(assistantVisible())
+                // Asistan kapanırken her zaman olay gelmeyebilir: açıkken kısa aralıkla kontrol et
+                if (assistantOn) handler.postDelayed(this, 400)
             }
-            val found = small && (assistantOn || !imeVisible)
-            if (found != assistantOn) {
-                Log.d(TAG, "asistan=$found")
-                assistantOn = found
-                IslandBus.post(IslandEvent.AssistantChanged(found))
-            }
-        }.onFailure { Log.e(TAG, "checkAssistant hata", it) }
-    }
-
-    private fun scheduleCheck() {
-        handler.removeCallbacks(checkRunnable)
-        handler.postDelayed(checkRunnable, 120)
+        }
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instance = this
-        // XML'de yoksa da pencere olaylarını iste (yetki yine XML'deki canRetrieveWindowContent'ten gelir)
+        // Pencere listesini okuyabilmek için (XML'e ek olarak, çalışma anında da): asistan penceresi bununla görülür
         runCatching {
-            serviceInfo = serviceInfo?.apply {
-                eventTypes = eventTypes or AccessibilityEvent.TYPE_WINDOWS_CHANGED or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-                flags = flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+            serviceInfo?.let { info ->
+                info.flags = info.flags or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                serviceInfo = info
             }
         }
+        instance = this
         notifyChanged()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        stopAssistantWatch()
         instance = null
-        handler.removeCallbacks(checkRunnable)
-        if (assistantOn) { assistantOn = false; IslandBus.post(IslandEvent.AssistantChanged(false)) }
         notifyChanged()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(checkRunnable)
+        stopAssistantWatch()
         instance = null
         super.onDestroy()
+    }
+
+    private fun stopAssistantWatch() {
+        handler.removeCallbacks(check)
+        eventSaysOn = false
+        runCatching { setAssistant(false) }
     }
 
     /**
@@ -110,17 +88,44 @@ class IslandAccessibilityService : AccessibilityService() {
         runCatching { onChanged?.invoke() }
     }
 
+    private fun setAssistant(on: Boolean) {
+        if (on == assistantOn) return
+        assistantOn = on
+        IslandBus.post(IslandEvent.AssistantChanged(on))
+    }
+
+    /** Ekranda asistan penceresi var mı? Önce pencere listesine bakar; alınamazsa son pencere olaylarına güvenir. */
+    private fun assistantVisible(): Boolean {
+        val ws = runCatching { windows }.getOrNull()
+        if (!ws.isNullOrEmpty()) {
+            return ws.any { w ->
+                runCatching { w.root?.packageName?.toString()?.let { it in ASSISTANT_PKGS } == true }.getOrDefault(false)
+            }
+        }
+        return eventSaysOn
+    }
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         runCatching {
-            val type = event?.eventType
-            if (type == AccessibilityEvent.TYPE_WINDOWS_CHANGED || type == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                scheduleCheck(); return
+            val e = event ?: return
+            when (e.eventType) {
+                AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> {
+                    if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return
+                    val text = e.text.joinToString(" ").trim()
+                    if (text.isEmpty()) return
+                    IslandBus.post(IslandEvent.Notification(e.packageName?.toString().orEmpty(), "", text))
+                }
+                AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                    val pkg = e.packageName?.toString()
+                    if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
+                        if (pkg in ASSISTANT_PKGS) eventSaysOn = true
+                        else if (pkg != packageName && pkg !in IGNORED_PKGS) eventSaysOn = false
+                    }
+                    // Olay yağmurunu tek kontrole indir
+                    handler.removeCallbacks(check)
+                    handler.postDelayed(check, 120)
+                }
             }
-            if (type != AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) return
-            if (NotificationManagerCompat.getEnabledListenerPackages(this).contains(packageName)) return
-            val text = event.text.joinToString(" ").trim()
-            if (text.isEmpty()) return
-            IslandBus.post(IslandEvent.Notification(event.packageName?.toString().orEmpty(), "", text))
         }
     }
 
