@@ -12,7 +12,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -23,24 +22,27 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-
-/** Adanın (kapalı halde) ekran üzerindeki konumu; hepsi piksel. */
-class LaunchSpec(val cx: Float, val top: Float, val w: Float, val h: Float)
-
-// ---- Ayar noktaları
-private const val POP_MS = 520             // adadan çıkıp ekranı kaplama süresi
-private const val HOLD_MS = 300L           // ekran kaplandıktan sonra siyahın bekleme süresi (uygulama açılırken)
-private const val FADE_MS = 240            // siyahın kalkması
-private const val START_SCALE = 0.12f      // adanın içinden çıkarkenki başlangıç boyutu (şarkı sözü animasyonuyla aynı)
-
-/** Şarkı sözlerindeki "Adadan tek tek" animasyonunun aynı eğrisi: hızlı çıkış + hafif taşıp yerine oturma. */
-private val PopEasing = CubicBezierEasing(0.2f, 1.25f, 0.4f, 1f)
+import kotlin.math.pow
 
 /**
- * "Adadan tek tek" sözleriyle aynı mantık: ekran boyutundaki siyah katman adanın merkezinde küçük (%12) başlar,
- * pop eğrisiyle büyüyerek ve ekranın merkezine kayarak tüm ekranı kaplar.
+ * Adanın (kapalı halde) ekran üzerindeki konumu (piksel) ve animasyon hızı.
+ * speed: 1 = normal, 2 = iki kat hızlı, 0.5 = yarı hızlı (ayarlardan gelir).
+ */
+class LaunchSpec(val cx: Float, val top: Float, val w: Float, val h: Float, val speed: Float = 1f)
+
+// ---- Ayar noktaları
+private const val BASE_MS = 650            // hız 1x iken adanın altından çıkıp ekranı kaplama süresi
+private const val HOLD_MS = 350L           // ekran kaplandıktan sonra siyahın bekleme süresi (uygulama açılırken)
+private const val FADE_MS = 240            // siyahın kalkması
+private const val START_W_DP = 46f         // adanın altından çıkan küçük şeklin başlangıç genişliği
+private const val START_H_DP = 30f         // ... ve yüksekliği
+
+// Yavaş başlar, yaklaştıkça hızlanır, sonda yumuşakça oturur
+private val ApproachEasing = CubicBezierEasing(0.55f, 0f, 0.25f, 1f)
+
+/**
+ * Adanın altından küçük bir siyah şekil çıkar ve ekrana yaklaşıyormuş gibi gitgide büyüyerek tüm ekranı kaplar.
+ * Büyüme üstel (katlanarak) olduğu için başta yavaş, yaklaştıkça hızlı hissedilir.
  * Ekran tamamen kapanınca [onCovered] çağrılır (uygulamayı o an aç); siyah bir süre sonra solar ve [onFinished] gelir.
  */
 @Composable
@@ -50,12 +52,11 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
     val a = remember { Animatable(0f) }
     val fade = remember { Animatable(1f) }
     var origin by remember { mutableStateOf(Offset.Zero) }
+    val ms = (BASE_MS / spec.speed.coerceIn(0.25f, 4f)).toInt()
 
     LaunchedEffect(Unit) {
-        val pop = launch { a.animateTo(1f, tween(POP_MS, easing = PopEasing)) }
-        snapshotFlow { a.value }.first { it >= 1f }     // ekran tamamen siyah oldu
-        covered()
-        pop.join()
+        a.animateTo(1f, tween(ms, easing = ApproachEasing))
+        covered()                                      // ekran tamamen siyah: uygulamayı aç
         delay(HOLD_MS)
         fade.animateTo(0f, tween(FADE_MS))
         finished()
@@ -68,24 +69,25 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
     ) {
         val d = density
         val m = 24f                                    // taşma payı: kenarda boşluk kalmasın
-        val sw = size.width
-        val sh = size.height
-        val p = a.value
+        val sw = size.width + 2 * m
+        val sh = size.height + 2 * m
+        val t = a.value
 
-        val sc = START_SCALE + (1f - START_SCALE) * p
-        val w = (sw + 2 * m) * sc
-        val h = (sh + 2 * m) * sc
-        val ix = spec.cx
-        val iy = spec.top + spec.h / 2f
-        val cx = ix + (sw / 2f - ix) * p               // adanın merkezinden ekranın merkezine
-        val cy = iy + (sh / 2f - iy) * p
-        val pc = p.coerceIn(0f, 1f)
-        val alpha = (p * 3f).coerceIn(0f, 1f)
-        val radius = minOf(36f * d * (1f - pc * pc), minOf(w, h) / 2f)
+        // Başlangıç: adanın alt kenarında küçük bir şekil; bitiş: tüm ekran
+        val w0 = START_W_DP * d
+        val h0 = START_H_DP * d
+        val cx0 = spec.cx
+        val cy0 = spec.top + spec.h + h0 * 0.15f
+        val w = w0 * (sw / w0).pow(t)                  // üstel büyüme: yaklaşma hissi
+        val h = h0 * (sh / h0).pow(t)
+        val cx = cx0 + (size.width / 2f - cx0) * t
+        val cy = cy0 + (size.height / 2f - cy0) * t
+        val alpha = (t * 12f).coerceIn(0f, 1f)         // ilk anda yumuşakça belirir
+        val radius = minOf(26f * d * (1f - t), minOf(w, h) / 2f)
 
         translate(-origin.x, -origin.y) {
-            if (p >= 1f) {
-                drawRect(Color.Black, Offset(-m, -m), Size(sw + 2 * m, sh + 2 * m))
+            if (t >= 1f) {
+                drawRect(Color.Black, Offset(-m, -m), Size(sw, sh))
             } else {
                 drawRoundRect(Color.Black.copy(alpha = alpha), Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
             }

@@ -355,6 +355,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
             w = dp(compactWidthFor(s, false)).toFloat(),
             h = chPx.toFloat(),
+            speed = s.favoriteLaunchSpeed,
         )
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
         lateinit var view: ComposeView

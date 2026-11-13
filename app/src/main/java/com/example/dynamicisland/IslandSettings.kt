@@ -83,6 +83,7 @@ data class IslandSettings(
     val favoritesEnabled: Boolean = false,
     val favoritesTrigger: Int = 0,           // 0 = dokununca, 1 = basılı tutunca
     val favoritePkgs: String = "",           // paket adları, virgülle ayrılmış (sıra korunur)
+    val favoriteLaunchSpeed: Float = 1f,     // açılış animasyonu hızı (1 = normal, 2 = iki kat hızlı)
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
 
     // Google Asistan / Gemini animasyonu
@@ -194,7 +195,7 @@ class SettingsRepository(context: Context) {
         val ANIM = booleanPreferencesKey("animOn"); val ANIM_S = intPreferencesKey("animStyle")
 
         val IDLE = booleanPreferencesKey("idle")
-        val FAV_ANIM = booleanPreferencesKey("fav_anim")
+        val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
@@ -260,6 +261,7 @@ class SettingsRepository(context: Context) {
             favoritesTrigger = p[K.FAV_TRIG] ?: d.favoritesTrigger,
             favoritePkgs = p[K.FAV_PKGS] ?: d.favoritePkgs,
             favoriteLaunchAnim = p[K.FAV_ANIM] ?: d.favoriteLaunchAnim,
+            favoriteLaunchSpeed = p[K.FAV_SPD] ?: d.favoriteLaunchSpeed,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
             assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
@@ -313,7 +315,7 @@ class SettingsRepository(context: Context) {
             it[K.ANIM] = s.animEnabled; it[K.ANIM_S] = s.animStyle
 
             it[K.IDLE] = s.showIdle
-            it[K.FAV_ANIM] = s.favoriteLaunchAnim
+            it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
             it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha

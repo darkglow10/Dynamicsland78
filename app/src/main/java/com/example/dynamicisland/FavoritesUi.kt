@@ -121,6 +121,12 @@ fun FavoritesSection(draft: IslandSettings, set: (IslandSettings) -> Unit) {
                 "Uygulamaya dokununca adadan siyah bir ekran çıkıp ekranı kaplar, ardından uygulama açılır",
                 draft.favoriteLaunchAnim,
             ) { set(draft.copy(favoriteLaunchAnim = it)) }
+            if (draft.favoriteLaunchAnim) {
+                SliderRow(
+                    "Animasyon hızı", draft.favoriteLaunchSpeed, 0.5f..2.5f,
+                    "%.1fx".format(draft.favoriteLaunchSpeed),
+                ) { set(draft.copy(favoriteLaunchSpeed = (it * 10f).toInt() / 10f)) }
+            }
             SectionDivider()
             if (selected.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
