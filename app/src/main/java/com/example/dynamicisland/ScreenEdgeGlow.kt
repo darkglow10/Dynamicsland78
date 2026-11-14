@@ -86,7 +86,7 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
         if (on) {
             reveal.snapTo(0f)
             fade.snapTo(1f)
-            reveal.animateTo(1f, tween(1900, easing = CubicBezierEasing(0.55f, 0.05f, 0.25f, 1f)))
+            reveal.animateTo(1f, tween(1250, easing = CubicBezierEasing(0.35f, 0f, 0.15f, 1f)))
         } else {
             fade.animateTo(0f, tween(450))
         }
