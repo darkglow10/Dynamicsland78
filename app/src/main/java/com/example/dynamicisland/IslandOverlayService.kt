@@ -794,59 +794,85 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Ekran kenarı parlaması (asistan)
     private val glowActive = MutableStateFlow(false)
-    private var glowDialog: Dialog? = null
     private var glowView: ComposeView? = null
+    private var glowLp: WindowManager.LayoutParams? = null
+    private var glowWm: WindowManager? = null
+    private var glowTries = 0
 
-    /** Tam ekran, dokunmatik olmayan, şeffaf pencere: asistan açılınca kenarlarda renkli parlama çizer. */
+    /** Ekranın gerçek köşe yarıçapı (px); alınamazsa 36dp. Çok yuvarlak görünmesin diye 40dp ile sınırlı. */
+    private fun screenCornerPx(): Float {
+        val cap = dp(40f).toFloat()
+        val real = if (Build.VERSION.SDK_INT >= 31) {
+            runCatching {
+                wm.currentWindowMetrics.windowInsets
+                    .getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT)?.radius?.toFloat()
+            }.getOrNull()
+        } else null
+        return minOf(real ?: dp(36f).toFloat(), cap)
+    }
+
+    /**
+     * Tam ekran, dokunmatik olmayan, şeffaf pencere (LaunchTransition penceresiyle aynı kurulum):
+     * durum çubuğu dahil tüm ekranı kaplar. Sistem pencereyi aşağı iterse ölçüp geri çekeriz.
+     */
     private fun attachEdgeGlow() {
         val a11y = IslandAccessibilityService.instance ?: return
-        val v = ComposeView(this).apply {
+        val corner = screenCornerPx()
+        val view = ComposeView(this).apply {
             setViewTreeLifecycleOwner(this@IslandOverlayService)
             setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
-            setContent { ScreenEdgeGlow(glowActive) }
+            setContent { ScreenEdgeGlow(glowActive, corner) }
         }
-        val d = Dialog(ContextThemeWrapper(a11y, android.R.style.Theme_Translucent_NoTitleBar))
-        d.setCancelable(false)
-        d.setCanceledOnTouchOutside(false)
-        d.setContentView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        d.window?.apply {
-            setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
-            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            addFlags(
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
-            )
-            setGravity(Gravity.TOP or Gravity.START)
-            setDecorFitsSystemWindows(false)
-            decorView.setPadding(0, 0, 0, 0)
-            val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
-            lp.width = WindowManager.LayoutParams.MATCH_PARENT
-            lp.height = WindowManager.LayoutParams.MATCH_PARENT
-            lp.x = 0; lp.y = 0
-            lp.format = PixelFormat.TRANSLUCENT
-            lp.fitInsetsTypes = 0
-            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-            attributes = lp
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
-        d.window?.decorView?.let { stripInsets(it) }
-        if (!runCatching { d.show() }.isSuccess) { v.disposeComposition(); return }
-        d.window?.decorView?.let { stripInsets(it) }
-        glowDialog = d; glowView = v
+        val host = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
+        if (!runCatching { host.addView(view, lp) }.isSuccess) { view.disposeComposition(); return }
+        glowView = view; glowLp = lp; glowWm = host
+        glowTries = 0
+        view.postDelayed(glowCalibrate, 300)
+    }
+
+    /** Pencere ekranın en üstünden başlamıyorsa (durum çubuğu payı) farkı kadar yukarı çeker ve boyunu uzatır. */
+    private val glowCalibrate = object : Runnable {
+        override fun run() {
+            val v = glowView ?: return
+            val lp = glowLp ?: return
+            val host = glowWm ?: return
+            if (!v.isAttachedToWindow) return
+            val loc = IntArray(2)
+            v.getLocationOnScreen(loc)
+            val dy = loc[1]
+            if (abs(dy) <= 1 || glowTries >= 3) return
+            glowTries++
+            val screenH = host.currentWindowMetrics.bounds.height()
+            lp.y -= dy
+            lp.height = screenH + abs(lp.y)
+            runCatching { host.updateViewLayout(v, lp) }
+            v.postDelayed(this, 250)
+        }
     }
 
     private fun detachEdgeGlow() {
-        glowView?.let { v ->
-            v.disposeComposition()
-            v.setViewTreeLifecycleOwner(null)
-            v.setViewTreeSavedStateRegistryOwner(null)
-        }
-        runCatching { glowDialog?.dismiss() }
-        glowDialog = null; glowView = null
+        val v = glowView ?: return
+        v.removeCallbacks(glowCalibrate)
+        runCatching { (glowWm ?: wm).removeView(v) }
+        v.disposeComposition()
+        v.setViewTreeLifecycleOwner(null)
+        v.setViewTreeSavedStateRegistryOwner(null)
+        glowView = null; glowLp = null; glowWm = null
     }
 
     private fun detachOverlay() {
