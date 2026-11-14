@@ -776,7 +776,7 @@ private val CallRed = Color(0xFFFF3B30)
 
 /** Telefon ahizesi simgesi. [rotation] 135 verilirse "kapat" simgesi olur. */
 @Composable
-private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier, tint: Color = Color.White) {
+internal fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier, tint: Color = Color.White) {
     Canvas(modifier) {
         val sc = size.width / 24f
         withTransform({

@@ -126,6 +126,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
         scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s); preloadFavorites(s) } }
         scope.launch { lyrics.collect { update { it } } }
+        // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
+        scope.launch { SideCallStore.flow(applicationContext).collect { syncSideButtons() } }
         // Durum görünümü (şarj, zil modu...) açıkken durum çubuğunu kapat
         scope.launch {
             combine(ui, settings) { u, s -> s.hideStatusBar && u.content is IslandContent.Status }
@@ -311,6 +313,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var callTickJob: Job? = null
     private var callEndJob: Job? = null
     private var callSpeaker = false
+    private val sideCall by lazy { SideCallOverlay(this, this, this, wm) }
     private var callExpanded = true
     private var callCollapseJob: Job? = null
 
@@ -335,6 +338,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         if (justAnswered) { callExpanded = false; callCollapseJob?.cancel() }   // cevaplanınca küçük ada
         publishCall()
+        syncSideButtons()
     }
 
     private fun publishCall() {
@@ -359,6 +363,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
             setSpeaker(false)
             callExpanded = true; callCollapseJob?.cancel()
+            syncSideButtons()
             if (ui.value.content is IslandContent.Call) collapseAndRest()
         }
     }
@@ -417,8 +422,34 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun onCallDecline() {
-        if (callKey == DEMO_CALL_KEY) { IslandBus.post(IslandEvent.CallEnded(DEMO_CALL_KEY)); return }
-        sendCallIntent(callDecline)
+        // Reddet / kapat: bildirimin kalkmasını bekleme, adayı hemen kapat
+        if (callKey != DEMO_CALL_KEY) sendCallIntent(callDecline)
+        endCallNow()
+    }
+
+    /** Aramayı yerelde anında bitirir: bekleme yok, ada hemen küçülüp kapanır. */
+    private fun endCallNow() {
+        callEndJob?.cancel(); callTickJob?.cancel(); callCollapseJob?.cancel()
+        callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
+        setSpeaker(false)
+        callExpanded = true
+        syncSideButtons()
+        collapseJob?.cancel()
+        collapseJob = scope.launch { collapseAndRest() }
+    }
+
+    /** Gelen aramada (ve ayar açıksa) kenar Cevapla / Reddet tuşlarını gösterir; aksi halde gizler. */
+    private fun syncSideButtons() {
+        val p = SideCallStore.flow(applicationContext).value
+        val should = p.enabled && callKey != null && callIncoming &&
+            android.provider.Settings.canDrawOverlays(this)
+        if (should) {
+            sideCall.show(
+                p,
+                onAnswer = { sideCall.hide(); onCallAnswer() },
+                onDecline = { sideCall.hide(); onCallDecline() },
+            )
+        } else sideCall.hide()
     }
 
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
@@ -1152,6 +1183,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandAccessibilityService.onChanged = null
         lyricsJob?.cancel()
         callTickJob?.cancel(); callEndJob?.cancel()
+        runCatching { sideCall.hide() }
         runCatching { removeLaunchView() }
         runCatching { detachStatusCover() }
         detachOutside()

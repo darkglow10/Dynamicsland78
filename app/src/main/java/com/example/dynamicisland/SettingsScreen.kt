@@ -167,6 +167,8 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
+            SideCallSettingsSection()
+
             // ---- Görünüm
             GroupLabel("Görünüm")
 
