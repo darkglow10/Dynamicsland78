@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -753,10 +754,15 @@ private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier) {
             rotate(rotation, Offset(size.width / 2f, size.height / 2f))
             scale(sc, sc, Offset.Zero)
         }) {
+            // Dolgu + aynı renkte yuvarlak kontur: ahize kalınlaşır
             drawPath(PhonePath, Color.White)
+            drawPath(PhonePath, Color.White, style = Stroke(width = PHONE_THICKEN, join = StrokeJoin.Round, cap = StrokeCap.Round))
         }
     }
 }
+
+/** Ahize simgesinin ek kalınlığı (24x24'lük simge birimi). Artırınca daha kalın olur. */
+private const val PHONE_THICKEN = 1.9f
 
 // Cevapla / Reddet düğmeleri: canlı kırmızı ve yeşil, üstten alta hafif renk geçişi
 private val AnswerTop = Color(0xFF45DB4F)
