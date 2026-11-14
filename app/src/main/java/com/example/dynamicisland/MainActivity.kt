@@ -179,8 +179,13 @@ private fun Context.hasPostNotif() =
 @Composable
 private fun AppRoot() {
     val cs = MaterialTheme.colorScheme
-    var tab by remember { mutableIntStateOf(0) }       // çubuktaki seçim (anında değişir)
-    var shown by remember { mutableIntStateOf(0) }     // ekranda gösterilen sayfa (çubuk animasyonu bitince değişir)
+    val ctx = LocalContext.current
+    // Dört izin de verilmişse Ana Sayfa (0), eksik varsa Kurulum (1) sekmesinde açılır
+    val startTab = remember {
+        if (ctx.hasOverlay() && ctx.hasListener() && ctx.hasPostNotif() && ctx.hasAccessibility()) 0 else 1
+    }
+    var tab by remember { mutableIntStateOf(startTab) }       // çubuktaki seçim (anında değişir)
+    var shown by remember { mutableIntStateOf(startTab) }     // ekranda gösterilen sayfa (çubuk animasyonu bitince değişir)
     // Ayarlar / Sözler sayfaları ağır; çubuk animasyonu ile aynı karede açılırsa takılıyor.
     // Önce çubuk akıcı kayar, sayfa hemen ardından değişir.
     LaunchedEffect(tab) {
