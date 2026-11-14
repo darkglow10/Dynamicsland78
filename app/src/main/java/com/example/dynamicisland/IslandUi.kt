@@ -526,10 +526,10 @@ fun IslandPill(
             if (swallow) snap() else tween(240, delayMillis = 60),
             label = "swallowAlpha",
         )
-        if (content is IslandContent.Media && compactVisible) {
+        if (content is IslandContent.Media && compactVisible && !swallow) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
-                val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) * swallowAlpha.value }
+                val fade = Modifier.graphicsLayer { alpha = if (swallow) 0f else (1f - progress.mean * 2f).coerceIn(0f, 1f) * swallowAlpha.value }
                 val artSize = (geo.ch - 12.dp).coerceAtLeast(14.dp)
                 val shownArt = customArt ?: content.art
                 shownArt?.let { art ->
