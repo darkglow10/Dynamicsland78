@@ -249,15 +249,24 @@ private fun EdgeGlowLayer(
                 blendMode = BlendMode.DstIn,
             )
 
-            // 3) Cephede ince, sönük, geçici bir renk halkası ("dalga geçiyor" hissi); ekranı boyamaz
-            val ringA = (1f - p) * 0.28f * (if (p < 0.08f) p / 0.08f else 1f)
-            if (ringA > 0.01f) {
-                val c = glowPaletteColor(hue.value + 0.1f)
+            // 3) Renk dalgası: sağ kenardan çıkıp TÜM ekranı kaplayarak sola doğru geçen geniş, renkli, yumuşak bir bant.
+            //    Cephede turuncu/pembe, arkasında mor/mavi akar; bant geçtikten sonra yalnızca kenar parlaması kalır.
+            val wave = 0.62f * (1f - p * p) * (if (p < 0.06f) p / 0.06f else 1f)
+            if (wave > 0.01f) {
+                val rr = r + soft * 0.1f
+                val band = soft * 1.9f
+                val s0 = max((rr - band) / rr, 0f)
+                fun g(s: Float) = s0 + (1f - s0) * s
+                val hv = hue.value
                 drawRect(
                     Brush.radialGradient(
-                        0f to Color.Transparent, 0.74f to Color.Transparent,
-                        0.9f to c.copy(alpha = ringA), 1f to Color.Transparent,
-                        center = Offset(wx, wy), radius = max(r - soft * 0.1f, 1f),
+                        0f to Color.Transparent, s0 to Color.Transparent,
+                        g(0.35f) to glowPaletteColor(hv).copy(alpha = wave * 0.45f),
+                        g(0.62f) to glowPaletteColor(hv + 0.12f).copy(alpha = wave * 0.85f),
+                        g(0.82f) to glowPaletteColor(hv + 0.24f).copy(alpha = wave),
+                        g(0.94f) to glowPaletteColor(hv + 0.36f).copy(alpha = wave * 0.65f),
+                        1f to Color.Transparent,
+                        center = Offset(wx, wy), radius = max(rr, 1f),
                     ),
                     blendMode = BlendMode.Plus,
                 )
