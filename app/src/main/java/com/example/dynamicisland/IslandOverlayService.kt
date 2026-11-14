@@ -350,8 +350,18 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
     }
 
-    private fun onCallAnswer() = sendCallIntent(callAnswer)
-    private fun onCallDecline() = sendCallIntent(callDecline)
+    private fun onCallAnswer() {
+        if (callKey == DEMO_CALL_KEY) {
+            // Ana Sayfa > Dene: sahte arama. Cevapla -> aktif aramaya geç
+            IslandBus.post(IslandEvent.Call(DEMO_CALL_KEY, "demo", callName, false, System.currentTimeMillis(), callAvatar, null, null))
+            return
+        }
+        sendCallIntent(callAnswer)
+    }
+    private fun onCallDecline() {
+        if (callKey == DEMO_CALL_KEY) { IslandBus.post(IslandEvent.CallEnded(DEMO_CALL_KEY)); return }
+        sendCallIntent(callDecline)
+    }
 
     /** Basılı tutma: boştayken (her iki tetikleyici modunda) favorileri açar; diğer hallerde dokunmayla aynı davranır. */
     private fun onPillLongPress() {
@@ -989,3 +999,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
 }
+
+/** Ana Sayfa > Dene bölümündeki sahte arama olayının anahtarı. */
+const val DEMO_CALL_KEY = "demo_call"

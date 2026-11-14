@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -225,10 +226,64 @@ private fun AppRoot() {
 
 private val FloatingTabsHeight = 68.dp
 
-/** Ana Sayfa sekmesi (şimdilik boş, içerik sonra eklenecek). */
+/** Servis (ada) şu an çalışıyor mu? */
+@Suppress("DEPRECATION")
+private fun Context.islandServiceRunning(): Boolean = runCatching {
+    getSystemService(android.app.ActivityManager::class.java)
+        .getRunningServices(Int.MAX_VALUE)
+        .any { it.service.className == IslandOverlayService::class.java.name }
+}.getOrDefault(false)
+
+/** Ana Sayfa: "Dene" kartı. Açılınca adanın görünümleri seçenek olarak listelenir. */
 @Composable
 private fun HomeScreen() {
-    Box(Modifier.fillMaxSize())
+    val ctx = LocalContext.current
+    var tryOpen by rememberSaveable { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = tryOpen) { tryOpen = false }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        if (!tryOpen) {
+            SectionCard("Dene", "Adanın görünümlerini ve animasyonlarını önizle") {
+                IslandActionButton("Dene", { tryOpen = true }, tonal = false)
+            }
+        } else {
+            SectionCard("Dene", "Birine dokun, ada o görünümü gösterir") {
+                TryRow("Ara", "Gelen arama tasarımı ve animasyonu. Cevapla / Reddet düğmeleri çalışır") {
+                    if (!ctx.islandServiceRunning()) {
+                        Toast.makeText(ctx, "Önce Kurulum sekmesinden adayı başlat", Toast.LENGTH_LONG).show()
+                    } else {
+                        IslandBus.post(
+                            IslandEvent.Call(
+                                key = DEMO_CALL_KEY, pkg = "demo", name = "Ayşe Yılmaz", incoming = true,
+                                startedAt = 0L, avatar = null, answer = null, decline = null,
+                            )
+                        )
+                    }
+                }
+            }
+            IslandActionButton("Geri", { tryOpen = false })
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun TryRow(title: String, desc: String, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = cs.onSurface, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+            Text(desc, color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 16.sp)
+        }
+        Text("›", color = cs.onSurfaceVariant, fontSize = 22.sp)
+    }
 }
 
 /**
