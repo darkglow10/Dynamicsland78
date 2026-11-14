@@ -27,6 +27,8 @@ class IslandAccessibilityService : AccessibilityService() {
         @Volatile var onChanged: (() -> Unit)? = null
         /** Son asistan penceresi kaydı (Kurulum > Tanılama'da görünür): algılama sorunlarını incelemek için. */
         @Volatile var lastDump: String = ""
+        /** Şu an ön plandaki (klavye/sistem hariç) uygulamanın paketi. */
+        @Volatile var currentFg: String? = null
 
         /** Asistan / Gemini arayüzünü barındıran paketler. Cihazında başka bir asistan varsa buraya ekle. */
         private val ASSISTANT_PKGS = setOf(
@@ -69,6 +71,7 @@ class IslandAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        currentFg = null
         stopAssistantWatch()
         instance = null
         notifyChanged()
@@ -142,6 +145,7 @@ class IslandAccessibilityService : AccessibilityService() {
         val old = fgPkg
         if (old == cur) return
         fgPkg = cur
+        currentFg = cur
         if (old != null) IslandBus.post(IslandEvent.AppSwitched(old, cur))
     }
 

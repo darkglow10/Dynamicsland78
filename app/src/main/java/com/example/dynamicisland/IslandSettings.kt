@@ -95,6 +95,7 @@ data class IslandSettings(
     val assistantHeightDp: Float = 112f,
     val musicExitSwallow: Boolean = true,     // panel adaya varınca ada büyüyüp onu yutar
     val musicExitSpeed: Float = 1f,           // müzikten çıkış animasyonu hızı (1 = normal)
+    val hideInMusicApp: Boolean = false,      // müzik uygulamasındayken adada çalan müzik görünmez
     val musicExitAnim: Boolean = true,        // müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı gösterir
     val assistantFullWidth: Boolean = false,  // ada kutusu yok; renkli animasyon ekranın solundan sağına uzanır
 
@@ -203,7 +204,7 @@ class SettingsRepository(context: Context) {
 
         val IDLE = booleanPreferencesKey("idle")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw")
+        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim"); val MX_SPD = floatPreferencesKey("mx_spd"); val MX_SW = booleanPreferencesKey("mx_sw"); val HIDE_MUSIC = booleanPreferencesKey("hide_music_in_app")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full")
@@ -277,6 +278,7 @@ class SettingsRepository(context: Context) {
             musicExitAnim = p[K.MX_ANIM] ?: d.musicExitAnim,
             musicExitSpeed = p[K.MX_SPD] ?: d.musicExitSpeed,
             musicExitSwallow = p[K.MX_SW] ?: d.musicExitSwallow,
+            hideInMusicApp = p[K.HIDE_MUSIC] ?: d.hideInMusicApp,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
             assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
@@ -332,7 +334,7 @@ class SettingsRepository(context: Context) {
 
             it[K.IDLE] = s.showIdle
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
-            it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_ANIM] = s.notifLaunchAnim; it[K.MX_ANIM] = s.musicExitAnim; it[K.MX_SPD] = s.musicExitSpeed; it[K.MX_SW] = s.musicExitSwallow
+            it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_ANIM] = s.notifLaunchAnim; it[K.MX_ANIM] = s.musicExitAnim; it[K.MX_SPD] = s.musicExitSpeed; it[K.MX_SW] = s.musicExitSwallow; it[K.HIDE_MUSIC] = s.hideInMusicApp
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp

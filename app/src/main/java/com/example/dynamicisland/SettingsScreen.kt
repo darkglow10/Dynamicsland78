@@ -460,6 +460,10 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
                 color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
         }
     }
+    SectionCard("Müzik uygulamasındayken", "Çalan müziğin uygulamasını açıkken adada şarkı gösterilmesin") {
+        SwitchRow("Müzik uygulamasında adayı gizle", "Çalan müziğin uygulamasındayken ada müziği göstermez. \"Müzikten çıkış animasyonu\" da açıksa çıkınca önce panel adaya girip yutulur, sonra şarkı görünür",
+            draft.hideInMusicApp) { set(draft.copy(hideInMusicApp = it)) }
+    }
     SectionCard("Müzikten çıkış", "Müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı yutup gösterir") {
         SwitchRow("Müzikten çıkış animasyonu", "Müzik çalarken o uygulamadan çıkınca çalışır",
             draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }

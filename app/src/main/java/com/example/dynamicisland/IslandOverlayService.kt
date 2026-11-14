@@ -125,7 +125,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
         }
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
-        scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s); preloadFavorites(s) } }
+        scope.launch { settings.collect { s -> updateInMusicApp(); ensureLyrics(); update { it }; refreshMediaVisibility(); syncOutside(s); preloadFavorites(s) } }
         scope.launch { lyrics.collect { update { it } } }
         // Kenar Cevapla / Reddet tuşları ayarı değişince (arama sürerken) güncelle
         scope.launch { SideCallStore.flow(applicationContext).collect { syncSideButtons() } }
@@ -163,7 +163,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun handle(e: IslandEvent) {
         when (e) {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
-            is IslandEvent.AppSwitched -> onAppSwitched(e.from)
+            is IslandEvent.AppSwitched -> {
+                val wasMusic = inMusicApp
+                updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
+                val started = onAppSwitched(e.from)   // çıkış animasyonu varsa ada yutma durumuna geçer (gizleme atlanır)
+                exitHold = started && settings.value.hideInMusicApp && wasMusic
+                refreshMediaVisibility()        // animasyon başlamadıysa müzik göster / gizle
+            }
             is IslandEvent.Call -> onCall(e)
             is IslandEvent.CallEnded -> onCallEnded(e.key)
             is IslandEvent.Status -> if (!assistantActive && callKey == null) showTemporarily(e.content, e.holdMs)
@@ -176,8 +182,33 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     /** ui'yi günceller ve "kapalı adada söz gösterilsin mi" bayrağını yeniden hesaplar. */
+    // ---- "Müzik uygulamasındayken adada müziği gizle"
+    private var inMusicApp = false
+    private var exitHold = false        // çıkış animasyonu sürerken (panel adaya girene dek) müzik gösterilmez
+    private fun hidingMedia() = settings.value.hideInMusicApp && (inMusicApp || exitHold)
+
+    private fun updateInMusicApp(fg: String? = IslandAccessibilityService.currentFg) {
+        inMusicApp = settings.value.hideInMusicApp && fg != null && lastMedia?.playing == true && isPlayingMediaApp(fg)
+    }
+
+    /** Gizleme durumu değişince ada içeriğini günceller. Yutma sürerken dokunmaz (yutma bitince müzik zaten gösterilir). */
+    private fun refreshMediaVisibility() {
+        val cur = ui.value
+        if (cur.swallow) return
+        if (hidingMedia()) {
+            if (cur.content is IslandContent.Media) { collapseJob?.cancel(); update { IslandUiState() } }
+        } else {
+            val m = lastMedia
+            if (cur.content is IslandContent.Idle && m != null && m.playing && callKey == null && !assistantActive) {
+                update { IslandUiState(m, false) }
+            }
+        }
+    }
+
     private fun update(f: (IslandUiState) -> IslandUiState) {
-        val n = f(ui.value)
+        var n = f(ui.value)
+        // Müzik uygulamasındayken müzik gösterilmez (yutma efekti hariç: o içerik çizmez)
+        if (n.content is IslandContent.Media && !n.swallow && hidingMedia()) n = IslandUiState()
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
@@ -205,6 +236,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (m == lastMedia) return
         lastMedia = m
         mediaState.value = m
+        updateInMusicApp()
         ensureLyrics()
         val cur = ui.value
         when {
@@ -616,16 +648,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var swallowWm: WindowManager? = null
 
     /** Çalan şarkının uygulamasından çıkılınca: siyah panel adaya küçülür, ada şarkıyı gösterir. */
-    private fun onAppSwitched(from: String) {
+    private fun onAppSwitched(from: String): Boolean {
         val s = settings.value
-        if (!s.musicExitAnim || launching || swallowView != null) return
-        val m = lastMedia ?: return
-        if (!m.playing || callKey != null || assistantActive) return
+        if (!s.musicExitAnim || launching || swallowView != null) return false
+        val m = lastMedia ?: return false
+        if (!m.playing || callKey != null || assistantActive) return false
         val c = ui.value.content
-        if (c !is IslandContent.Media && c !is IslandContent.Idle) return
-        if (!isPlayingMediaApp(from)) return
+        if (c !is IslandContent.Media && c !is IslandContent.Idle) return false
+        if (!isPlayingMediaApp(from)) return false
         swallowIsland()                 // ada önce açılır (yutmaya hazırlanır)
         startSwallowTransition()        // panel, ada açılırken kısa gecikmeyle başlar
+        return swallowView != null
     }
 
     /** [pkg], şu an çalan bir medya oturumunun uygulaması mı? (Bildirim erişimi açıksa okunabilir.) */
@@ -714,6 +747,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             v.setViewTreeSavedStateRegistryOwner(null)
         }
         swallowView = null; swallowWm = null
+        if (exitHold) { exitHold = false; refreshMediaVisibility() }   // panel bitti: müzik artık gösterilebilir
     }
 
     private fun removeLaunchView() {
