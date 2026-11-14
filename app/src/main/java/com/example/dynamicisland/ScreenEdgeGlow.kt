@@ -1,5 +1,6 @@
 package com.example.dynamicisland
 
+import android.graphics.Bitmap
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -12,6 +13,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -19,22 +21,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.ImageBitmapConfig
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.SweepGradientShader
-import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
@@ -43,37 +41,43 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
-import kotlin.math.cos
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.sin
-import androidx.compose.ui.graphics.Canvas as GfxCanvas
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * Asistan açılınca ekran kenarlarında Siri / Apple Intelligence tarzı renkli parlama.
  * 1) Sağ kenarda küçük bir renk belirir, 2) büyüyerek dalga gibi tüm ekrana yayılır,
- * 3) renk yalnızca kenarlarda kalır ve renk değiştirmeye devam eder. Asistan kapanınca söner.
+ * 3) renk yalnızca kenarlarda kalır ve kenar boyunca akarak değişmeye devam eder. Asistan kapanınca söner.
  *
- * PERFORMANS: Renkli kenar parlaması (yumuşak düşüşlü, renkleri hazır) bir kez, arka planda, düşük çözünürlüklü
- * tek bir resim olarak çizilir. Her karede yalnızca bu resim çizilir:
- *  - renk değişimi: resme ton döndürme filtresi (ColorMatrix) uygulanır,
- *  - dalga: resim büyüyen bir daireyle kırpılarak çizilir (tam ekran ara katman / karışım modu YOK).
- * Ayrıca açılıştan önce, görünmez şekilde bir kez çizilip ekran kartı programları ısıtılır (ilk karedeki takılmayı önler).
+ * YAPI (hem görüntü hem performans için):
+ *  - Parlama, piksel piksel hesaplanan yumuşak bir düşüşle (ekran kenarından içeri doğru) bir kez, arka planda çizilir.
+ *    Renk, ekranın ÇEVRE UZUNLUĞU boyunca verilir (köşeler yay uzunluğuyla), bu yüzden köşelerde çapraz şerit oluşmaz.
+ *  - Renk akışı için paletin birkaç kaydırılmış kopyası hazırlanır; kareler arasında yumuşakça birbirine karıştırılır.
+ *  - Tüm çizim, ekranın ~%40 çözünürlüğündeki bir katmanda yapılır ve ekrana büyütülür (parlama zaten yumuşak).
+ *    Böylece dalga maskesi (DstIn) gibi işlemler çok ucuzdur ve cephe pürüzsüz çıkar.
  */
 @Composable
 fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
     val on by active.collectAsState()
     val density = LocalDensity.current.density
     var size by remember { mutableStateOf(IntSize.Zero) }
-    var glow by remember { mutableStateOf<ImageBitmap?>(null) }
+    var glows by remember { mutableStateOf<List<ImageBitmap>?>(null) }
     var warm by remember { mutableStateOf(false) }
     val reveal = remember { Animatable(0f) }   // 0 -> 1: sağdan büyüyen dalga
     val fade = remember { Animatable(0f) }     // genel görünürlük
 
-    // Parlama resmi asistan açılmadan ÖNCE (pencere eklenir eklenmez) arka planda hazırlanır
+    val lw = max((size.width * RENDER_SCALE).roundToInt(), 2)
+    val lh = max((size.height * RENDER_SCALE).roundToInt(), 2)
+
+    // Parlama resimleri asistan açılmadan ÖNCE (pencere eklenir eklenmez) arka planda hazırlanır
     LaunchedEffect(size, cornerPx) {
         if (size.width > 1 && size.height > 1) {
-            glow = withContext(Dispatchers.Default) { buildGlowBitmap(size, cornerPx, density) }
+            glows = withContext(Dispatchers.Default) { buildGlowBitmaps(lw, lh, cornerPx * RENDER_SCALE, density * RENDER_SCALE) }
             warm = true; delay(350); warm = false     // görünmez ısınma çizimi
         }
     }
@@ -88,112 +92,172 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
         }
     }
 
-    Box(Modifier.fillMaxSize().onSizeChanged { size = it }) {
-        val g = glow
+    Box(Modifier.fillMaxSize().onSizeChanged { size = it }, contentAlignment = Alignment.Center) {
+        val g = glows
         val visible = on || fade.value > 0.001f
         // Görünmezken (ve ısınma bitince) hiçbir şey çizilmez, sonsuz animasyon çalışmaz
-        if (g != null && (visible || warm)) EdgeGlowCanvas(g, size, reveal, fade, warmOnly = warm && !visible)
+        if (g != null && (visible || warm)) {
+            val dens = LocalDensity.current
+            val wDp = with(dens) { lw.toDp() }
+            val hDp = with(dens) { lh.toDp() }
+            EdgeGlowLayer(
+                glows = g, reveal = reveal, fade = fade, warmOnly = warm && !visible,
+                sx = size.width / lw.toFloat(), sy = size.height / lh.toFloat(),
+                modifier = Modifier.requiredSize(wDp, hDp),
+            )
+        }
     }
 }
 
-private const val LAYERS = 22               // parlama katman sayısı (çok katman = çizgisiz, yumuşak geçiş)
+private const val RENDER_SCALE = 0.4f       // çizim katmanının ekrana oranı (büyütülerek gösterilir)
 private const val GLOW_DEPTH_DP = 64f       // parlamanın ekran kenarından içeri uzanma derinliği
-private const val LAYER_ALPHA = 0.048f
-private const val BITMAP_SCALE = 0.25f      // resim çözünürlüğü (yumuşak olduğu için düşük çözünürlük yeter)
-private const val EDGE_LAYERS = 5           // dalga cephesinin yumuşaklığı için iç içe kırpma sayısı
+private const val PALETTE_SHIFTS = 6        // renk akışı için hazırlanan kaydırılmış palet sayısı
 
-private val GLOW_COLOR_LIST: List<Color> by lazy { List(13) { i -> siriColor(i / 12f) } }
+/** Parlama paleti (çevre boyunca döngüsel). Saf beyaz yok: ekran kenarı beyaza yıkanmasın. */
+private val GLOW_PALETTE = listOf(
+    Color(0xFF0A84FF), Color(0xFF7B4DFF), Color(0xFFFF2D87), Color(0xFFFF3B30),
+    Color(0xFFFF9500), Color(0xFFFFD60A), Color(0xFF64D2FF), Color(0xFF0A84FF),
+)
 
-/** Renkli, kenarda yoğun / içeride sönen parlama resmi. */
-private fun buildGlowBitmap(size: IntSize, cornerPx: Float, density: Float): ImageBitmap {
-    val k = BITMAP_SCALE
-    val wS = max((size.width * k).toInt(), 2)
-    val hS = max((size.height * k).toInt(), 2)
-    val bmp = ImageBitmap(wS, hS, ImageBitmapConfig.Argb8888)
-    val canvas = GfxCanvas(bmp)
-    val paint = Paint().apply {
-        style = PaintingStyle.Stroke
-        blendMode = BlendMode.Plus
-        isAntiAlias = true
-        shader = SweepGradientShader(Offset(wS / 2f, hS / 2f), GLOW_COLOR_LIST)
-        alpha = LAYER_ALPHA
-    }
-    val depth = GLOW_DEPTH_DP * density * k
-    val corner = cornerPx * k
-    for (i in 0 until LAYERS) {
-        val f = (i + 1) / LAYERS.toFloat()
-        val sw = depth * f * f
-        val inset = sw / 2f
-        val r = (corner - inset).coerceAtLeast(0f)
-        paint.strokeWidth = sw
-        canvas.drawRoundRect(inset, inset, wS - inset, hS - inset, r, r, paint)
-    }
-    return bmp
+private fun glowPaletteColor(u: Float): Color {
+    val n = GLOW_PALETTE.size - 1
+    val x = (((u % 1f) + 1f) % 1f) * n
+    val i = x.toInt().coerceIn(0, n - 1)
+    return lerp(GLOW_PALETTE[i], GLOW_PALETTE[i + 1], x - i)
 }
 
-/** CSS hue-rotate matrisi: parlamanın renklerini döndürür (beyaz / gri sabit kalır). */
-private fun setHueRotate(cm: ColorMatrix, turns: Float) {
-    val a = (turns * 2.0 * PI).toFloat()
-    val c = cos(a); val s = sin(a)
-    val v = cm.values
-    v[0] = 0.213f + c * 0.787f - s * 0.213f; v[1] = 0.715f - c * 0.715f - s * 0.715f; v[2] = 0.072f - c * 0.072f + s * 0.928f; v[3] = 0f; v[4] = 0f
-    v[5] = 0.213f - c * 0.213f + s * 0.143f; v[6] = 0.715f + c * 0.285f + s * 0.140f; v[7] = 0.072f - c * 0.072f - s * 0.283f; v[8] = 0f; v[9] = 0f
-    v[10] = 0.213f - c * 0.213f - s * 0.787f; v[11] = 0.715f - c * 0.715f + s * 0.715f; v[12] = 0.072f + c * 0.928f + s * 0.072f; v[13] = 0f; v[14] = 0f
-    v[15] = 0f; v[16] = 0f; v[17] = 0f; v[18] = 1f; v[19] = 0f
+/**
+ * Yuvarlak köşeli dikdörtgenin (ekran) kenarından içeri doğru yumuşakça sönen parlama.
+ * Her piksel için: kenara uzaklık -> parlaklık, en yakın kenar noktasının çevre konumu -> renk.
+ * PALETTE_SHIFTS adet, renk konumu kaydırılmış resim döndürür.
+ */
+private fun buildGlowBitmaps(w: Int, h: Int, cornerPx: Float, densityScaled: Float): List<ImageBitmap> {
+    val depth = GLOW_DEPTH_DP * densityScaled
+    val rc = min(cornerPx, min(w, h) / 2f - 1f).coerceAtLeast(1f)
+    val cx = w / 2f; val cy = h / 2f
+    val ax = cx - rc; val ay = cy - rc
+    val lx = w - 2f * rc; val ly = h - 2f * rc
+    val arc = (PI / 2.0 * rc).toFloat()
+    val total = 2f * lx + 2f * ly + 4f * arc
+    val halfPi = (PI / 2.0).toFloat()
+    // Çevre üzerindeki başlangıç konumları (saat yönünde, sol üst yay bitişinden başlar)
+    val trStart = lx
+    val rightStart = lx + arc
+    val brStart = lx + arc + ly
+    val bottomStart = lx + 2f * arc + ly
+    val blStart = 2f * lx + 2f * arc + ly
+    val leftStart = 2f * lx + 3f * arc + ly
+    val tlStart = 2f * lx + 3f * arc + 2f * ly
+
+    val n = w * h
+    val inten = FloatArray(n)
+    val uu = FloatArray(n)
+    for (y in 0 until h) {
+        for (x in 0 until w) {
+            val px = x + 0.5f - cx
+            val py = y + 0.5f - cy
+            val qx = abs(px) - ax
+            val qy = abs(py) - ay
+            val dist = hypot(max(qx, 0f), max(qy, 0f)) + min(max(qx, qy), 0f) - rc
+            val d = max(-dist, 0f)               // kenardan içeri derinlik (köşe dışında kalan ekran pikselleri = 0, tam parlak)
+            val t = d / depth
+            val i = y * w + x
+            if (t >= 1f) { inten[i] = 0f; continue }
+            val m = 1f - t
+            inten[i] = min(1f, m.pow(2.2f) + 0.45f * m.pow(14f))   // yumuşak düşüş + kenarda ince parlak çizgi
+
+            val s: Float = if (qx > 0f && qy > 0f) {
+                // Köşe bölgesi: konum, köşe merkezi etrafındaki açıdan (yay uzunluğu) gelir => köşede kopukluk yok
+                if (px > 0f && py < 0f) trStart + arc * (atan2(qx, qy) / halfPi)
+                else if (px > 0f) brStart + arc * (atan2(qy, qx) / halfPi)
+                else if (py > 0f) blStart + arc * (atan2(qx, qy) / halfPi)
+                else tlStart + arc * (atan2(qy, qx) / halfPi)
+            } else if (qx > qy) {
+                if (px > 0f) rightStart + (py + ay).coerceIn(0f, ly)
+                else leftStart + (ay - py).coerceIn(0f, ly)
+            } else {
+                if (py < 0f) (px + ax).coerceIn(0f, lx)
+                else bottomStart + (ax - px).coerceIn(0f, lx)
+            }
+            uu[i] = s / total
+        }
+    }
+
+    val lut = IntArray(512) { glowPaletteColor(it / 512f).toArgb() and 0xFFFFFF }
+    return List(PALETTE_SHIFTS) { j ->
+        val off = j / PALETTE_SHIFTS.toFloat()
+        val pix = IntArray(n)
+        for (i in 0 until n) {
+            val a = inten[i]
+            if (a <= 0f) continue
+            val idx = (((uu[i] + off) % 1f) * 512f).toInt() and 511
+            pix[i] = ((a * 255f + 0.5f).toInt() shl 24) or lut[idx]
+        }
+        Bitmap.createBitmap(pix, w, h, Bitmap.Config.ARGB_8888).asImageBitmap()
+    }
 }
 
 @Composable
-private fun EdgeGlowCanvas(
-    glow: ImageBitmap, size: IntSize, reveal: Animatable<Float, *>, fade: Animatable<Float, *>, warmOnly: Boolean,
+private fun EdgeGlowLayer(
+    glows: List<ImageBitmap>, reveal: Animatable<Float, *>, fade: Animatable<Float, *>, warmOnly: Boolean,
+    sx: Float, sy: Float, modifier: Modifier,
 ) {
     val t = rememberInfiniteTransition(label = "edgeGlow")
-    val hue = t.animateFloat(0f, 1f, infiniteRepeatable(tween(8000, easing = LinearEasing)), label = "hue")
-    val pulse = t.animateFloat(0.88f, 1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
-    val dst = remember(size) { IntSize(size.width, size.height) }
-    val cm = remember { ColorMatrix() }
-    val clip = remember { Path() }
+    val hue = t.animateFloat(0f, 1f, infiniteRepeatable(tween(9000, easing = LinearEasing)), label = "hue")
+    val pulse = t.animateFloat(0.9f, 1f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulse")
+    val k = glows.size
 
-    Canvas(Modifier.fillMaxSize()) {
-        val w = size.width.toFloat(); val h = size.height.toFloat()
-        val vis = if (warmOnly) 0.02f else fade.value            // ısınma çizimi: neredeyse görünmez
-        if (vis <= 0.001f) return@Canvas
+    Canvas(
+        modifier.graphicsLayer {
+            scaleX = sx; scaleY = sy          // düşük çözünürlüklü katman ekrana büyütülür
+            compositingStrategy = CompositingStrategy.Offscreen   // dalga maskesi yalnızca bu katmanı etkiler
+            alpha = if (warmOnly) 0.02f else fade.value
+        },
+    ) {
+        val w = size.width; val h = size.height
         val p = if (warmOnly) 0.4f else reveal.value
-        setHueRotate(cm, hue.value)
-        val filter = ColorFilter.colorMatrix(cm)
-        val a = vis * pulse.value
+        val a = pulse.value
 
-        // Dalga: merkezi sağ kenarın ortası olan büyüyen daire. Yumuşak cephe için iç içe birkaç kırpma,
-        // her biri kendi alfasıyla çizilir (toplam alfa dıştan içe 0 -> 1 artar).
-        val wx = w; val wy = h / 2f
-        val maxR = hypot(w, h / 2f) * 1.25f
-        val soft = maxR * 0.30f
-        val r = maxR * (0.03f + 0.97f * p) + soft * 0.2f
+        // 1) Renk akışı: iki komşu kaydırılmış paleti toplamsal olarak karıştır
+        val x = hue.value * k
+        val i0 = x.toInt().coerceIn(0, k - 1)
+        val tt = x - i0
+        val i1 = (i0 + 1) % k
+        drawImage(glows[i0], alpha = (1f - tt) * a, blendMode = BlendMode.Plus)
+        drawImage(glows[i1], alpha = tt * a, blendMode = BlendMode.Plus)
 
-        if (p >= 1f) {
-            drawImage(glow, dstSize = dst, alpha = a, colorFilter = filter, filterQuality = FilterQuality.High)
-        } else {
-            for (j in 0 until EDGE_LAYERS) {
-                val rj = r - soft * j / (EDGE_LAYERS - 1).toFloat()
-                if (rj <= 1f) break
-                // hedef toplam alfa (j+1)/N; bu katmanın alfası: (c_j - c_{j-1}) / (1 - c_{j-1})
-                val cPrev = j / EDGE_LAYERS.toFloat()
-                val cNow = (j + 1) / EDGE_LAYERS.toFloat()
-                val layerA = (cNow - cPrev) / (1f - cPrev)
-                clip.reset()
-                clip.addOval(Rect(Offset(wx, wy), rj))
-                clipPath(clip) {
-                    drawImage(glow, dstSize = dst, alpha = a * layerA, colorFilter = filter, filterQuality = FilterQuality.High)
-                }
-            }
-            // Dalga cephesinde geçici parlak halka
-            val ringA = (1f - p) * 0.55f * (if (p < 0.08f) p / 0.08f else 1f) * (if (warmOnly) 0.02f else fade.value)
-            if (ringA > 0.001f) {
-                val c = GLOW_COLOR_LIST[((hue.value * 12f).toInt() + 2) % 12]
+        if (p < 1f) {
+            // 2) Dalga: merkezi sağ kenarın ortası olan büyüyen daire. Yumuşak cephe: içi görünür, dışı gizli
+            val wx = w; val wy = h / 2f
+            val dMax = hypot(w, h / 2f)
+            val soft = dMax * 0.30f
+            val r0 = soft * 0.25f
+            val r = r0 + (dMax + soft * 1.05f - r0) * p
+            val inner = max((r - soft) / r, 0f)
+            fun f(s: Float) = inner + (1f - inner) * s
+            drawRect(
+                Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to Color.Black, inner to Color.Black,
+                        f(0.25f) to Color.Black.copy(alpha = 0.844f),
+                        f(0.5f) to Color.Black.copy(alpha = 0.5f),
+                        f(0.75f) to Color.Black.copy(alpha = 0.156f),
+                        1f to Color.Transparent,
+                    ),
+                    center = Offset(wx, wy), radius = max(r, 1f),
+                ),
+                blendMode = BlendMode.DstIn,
+            )
+
+            // 3) Cephede ince, sönük, geçici bir renk halkası ("dalga geçiyor" hissi); ekranı boyamaz
+            val ringA = (1f - p) * 0.28f * (if (p < 0.08f) p / 0.08f else 1f)
+            if (ringA > 0.01f) {
+                val c = glowPaletteColor(hue.value + 0.1f)
                 drawRect(
                     Brush.radialGradient(
-                        0f to Color.Transparent, 0.55f to Color.Transparent,
-                        0.88f to c.copy(alpha = ringA), 1f to Color.Transparent,
-                        center = Offset(wx, wy), radius = max(r - soft * 0.15f, 1f),
+                        0f to Color.Transparent, 0.74f to Color.Transparent,
+                        0.9f to c.copy(alpha = ringA), 1f to Color.Transparent,
+                        center = Offset(wx, wy), radius = max(r - soft * 0.1f, 1f),
                     ),
                     blendMode = BlendMode.Plus,
                 )
