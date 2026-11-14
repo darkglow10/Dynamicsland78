@@ -106,6 +106,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // istisna yakalanmazsa süreç çöker ve erişilebilirlik servisi "hatalı çalışıyor" olarak işaretlenir.
         if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
         runCatching { detectCutout() }
+        runCatching { attachStatusCover() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { runCatching { reattach() } }
@@ -125,6 +126,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         // Ayar değişince: söz aramasını, kapalı ada genişliğini ve dış söz penceresini güncelle
         scope.launch { settings.collect { s -> ensureLyrics(); update { it }; syncOutside(s); preloadFavorites(s) } }
         scope.launch { lyrics.collect { update { it } } }
+        // Durum görünümü (şarj, zil modu...) açıkken durum çubuğunu kapat
+        scope.launch {
+            combine(ui, settings) { u, s -> s.hideStatusBar && u.content is IslandContent.Status }
+                .distinctUntilChanged()
+                .collect { setStatusCover(it) }
+        }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
             combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s) }
@@ -146,7 +153,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandContent.Assistant -> 3
         is IslandContent.Favorites -> 4
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
-        is IslandContent.Status -> 7
+        is IslandContent.Status -> if (c.kind == StatusKind.Charging) 8 else 7
     }
 
     // ---------------------------------------------------------------- Olay mantığı
@@ -597,12 +604,76 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun reattach() {
         runCatching { detachOverlay() }
+        runCatching { detachStatusCover() }
         // Erişilebilirlik bağlantısı değişince dış söz penceresinin türü de değişir: yeniden kur.
-        // Önce söz penceresi, sonra ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
+        // Önce durum çubuğu örtüsü, sonra söz penceresi, en son ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
         runCatching { detachOutside() }
+        runCatching { attachStatusCover() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
+    }
+
+    // ---------------------------------------------------------------- Durum çubuğu örtüsü
+    /**
+     * "Durum çubuğunu gizle": durum çubuğunun üstüne siyah, dokunmatik olmayan bir pencere çizilir.
+     * Yalnızca erişilebilirlik servisi bağlıyken çalışır (TYPE_ACCESSIBILITY_OVERLAY durum çubuğunun üstünde durur).
+     */
+    private var statusCover: View? = null
+    private var statusCoverWm: WindowManager? = null
+
+    private fun statusBarHeightPx(): Int {
+        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
+        val sb = if (id > 0) resources.getDimensionPixelSize(id) else dp(24f)
+        return maxOf(sb, cutCenterYPx * 2)
+    }
+
+    private fun attachStatusCover() {
+        val a11y = IslandAccessibilityService.instance ?: return
+        val v = View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0f; visibility = View.INVISIBLE }
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, statusBarHeightPx(),
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+        val host = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
+        if (runCatching { host.addView(v, lp) }.isSuccess) {
+            statusCover = v; statusCoverWm = host
+            // Pencere yeniden kurulduysa mevcut duruma göre hemen uygula
+            if (settings.value.hideStatusBar && ui.value.content is IslandContent.Status) {
+                v.visibility = View.VISIBLE; v.alpha = 1f
+            }
+        }
+    }
+
+    private fun setStatusCover(show: Boolean) {
+        val v = statusCover ?: return
+        v.animate().cancel()
+        if (show) {
+            v.visibility = View.VISIBLE
+            v.animate().alpha(1f).setDuration(200).start()
+        } else {
+            v.animate().alpha(0f).setDuration(220).withEndAction { v.visibility = View.INVISIBLE }.start()
+        }
+    }
+
+    private fun detachStatusCover() {
+        val v = statusCover
+        if (v != null) {
+            v.animate().cancel()
+            runCatching { (statusCoverWm ?: wm).removeView(v) }
+        }
+        statusCover = null; statusCoverWm = null
     }
 
     private fun detachOverlay() {
@@ -796,13 +867,20 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val cw = dp(compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
         val assistant = k.kind == 3
-        val ew = dp(if (assistant) s.assistantWidthDp else s.expandedWidthDp)
+        val ew = dp(
+            when {
+                assistant -> s.assistantWidthDp
+                k.kind == 8 -> maxOf(CHARGE_PILL_W_DP, s.compactWidthDp)     // şarj: kompakt pill
+                else -> s.expandedWidthDp
+            }
+        )
         val favN = (ui.value.content as? IslandContent.Favorites)?.apps?.size ?: 0
         val eh = dp(
             when {
                 assistant -> s.assistantHeightDp
                 k.kind == 5 -> 74f          // gelen arama
                 k.kind == 6 -> 88f          // aktif arama
+                k.kind == 8 -> chargePillHeightDp(s)   // şarj
                 k.kind == 4 -> s.favoritesHeightDp(favN)
                 else -> s.expandedHeightDp + if (music) s.musicExtraDp() else 0f
             }
@@ -994,6 +1072,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         lyricsJob?.cancel()
         callTickJob?.cancel(); callEndJob?.cancel()
         runCatching { removeLaunchView() }
+        runCatching { detachStatusCover() }
         detachOutside()
         collapseJob?.cancel()
         scope.cancel()

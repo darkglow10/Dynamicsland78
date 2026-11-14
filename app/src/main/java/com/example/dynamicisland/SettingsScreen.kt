@@ -146,6 +146,7 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
             }
             SectionCard("Görünürlük", "Ada ne zaman görünsün") {
                 SwitchRow("Boştayken de göster", "Müzik ve bildirim yokken ada kamera çevresinde durur", draft.showIdle) { draft = draft.copy(showIdle = it) }
+                SwitchRow("Durum çubuğunu gizle", "Şarj görünümü, zil sesi görünümü vb. açıldığında durum çubuğunu gizler", draft.hideStatusBar) { draft = draft.copy(hideStatusBar = it) }
             }
             FavoritesSection(draft) { draft = it }
 

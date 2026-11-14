@@ -153,6 +153,9 @@ fun IslandRoot(
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
             if (content is IslandContent.Call) geo = geo.copy(eh = if (content.isIncoming) 74.dp else 88.dp)
+            if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
+                geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
+            }
             IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline)
         }
     }
@@ -453,7 +456,8 @@ fun IslandPill(
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
                     is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline)
-                    is IslandContent.Status -> StatusContent(content, rb)
+                    is IslandContent.Status ->
+                        if (content.kind == StatusKind.Charging) ChargeContent(content, rb) else StatusContent(content, rb)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
@@ -650,6 +654,39 @@ private fun formatRemaining(ms: Long): String {
     val t = ((ms + 999) / 1000).coerceAtLeast(0)
     val h = t / 3600; val m = (t % 3600) / 60; val s = t % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+/** Şarj görünümü: kapalı adadan biraz geniş, tek satır. Solda yazı, sağda yeşil yüzde + pil. */
+const val CHARGE_PILL_W_DP = 220f
+fun chargePillHeightDp(cfg: IslandSettings): Float = cfg.compactHeightDp + 4f
+
+@Composable
+private fun ChargeContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val green = Color(0xFF34C759)
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.5.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+        Spacer(Modifier.weight(1f))      // ortada kamera deliği için boşluk kalır
+        Text(c.value, color = green, fontWeight = FontWeight.Bold, fontSize = 13.5.sp, maxLines = 1)
+        Spacer(Modifier.width(6.dp))
+        Canvas(Modifier.size(width = 26.dp, height = 12.dp)) {
+            val tipW = 1.8.dp.toPx()
+            val bodyW = size.width - tipW - 1.dp.toPx()
+            val r = CornerRadius(4.dp.toPx())
+            drawRoundRect(Color.White.copy(alpha = 0.28f), size = Size(bodyW, size.height), cornerRadius = r)
+            val fillW = (bodyW * c.progress.coerceIn(0f, 1f)).coerceAtLeast(size.height * 0.5f)
+            drawRoundRect(green, size = Size(fillW, size.height), cornerRadius = r)
+            drawRoundRect(
+                Color.White.copy(alpha = 0.40f),
+                topLeft = Offset(bodyW + 1.dp.toPx(), size.height * 0.3f),
+                size = Size(tipW, size.height * 0.4f),
+                cornerRadius = CornerRadius(1.dp.toPx()),
+            )
+        }
+    }
 }
 
 @Composable

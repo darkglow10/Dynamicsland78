@@ -85,6 +85,7 @@ data class IslandSettings(
     val favoritePkgs: String = "",           // paket adları, virgülle ayrılmış (sıra korunur)
     val favoriteLaunchSpeed: Float = 1f,     // açılış animasyonu hızı (1 = normal, 2 = iki kat hızlı)
     val notifTapOpens: Boolean = true,       // adadaki bildirime dokununca uygulama açılsın
+    val hideStatusBar: Boolean = false,      // şarj / zil modu gibi durum görünümleri açıkken durum çubuğunu gizle
     val notifLaunchAnim: Boolean = true,     // ... ve açılırken adadan siyah ekran animasyonu oynasın
     val favoriteLaunchAnim: Boolean = true,  // uygulamaya dokununca adadan siyah ekran çıkıp ekranı kaplasın
 
@@ -199,6 +200,7 @@ class SettingsRepository(context: Context) {
         val IDLE = booleanPreferencesKey("idle")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
         val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim")
+        val HIDE_SB = booleanPreferencesKey("hide_sb")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
@@ -266,6 +268,7 @@ class SettingsRepository(context: Context) {
             favoriteLaunchAnim = p[K.FAV_ANIM] ?: d.favoriteLaunchAnim,
             favoriteLaunchSpeed = p[K.FAV_SPD] ?: d.favoriteLaunchSpeed,
             notifTapOpens = p[K.NT_OPEN] ?: d.notifTapOpens,
+            hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
@@ -322,6 +325,7 @@ class SettingsRepository(context: Context) {
             it[K.IDLE] = s.showIdle
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
             it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_ANIM] = s.notifLaunchAnim
+            it[K.HIDE_SB] = s.hideStatusBar
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
             it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha
