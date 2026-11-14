@@ -465,6 +465,8 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
             draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }
         if (draft.musicExitAnim) {
             SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
+            SwitchRow("Ada yutma efekti", "Panel adaya varınca ada kısa süre büyüyüp onu yutar. Kapalıysa ada büyümez",
+                draft.musicExitSwallow) { set(draft.copy(musicExitSwallow = it)) }
         }
     }
     if (!draft.lyricsEnabled) return

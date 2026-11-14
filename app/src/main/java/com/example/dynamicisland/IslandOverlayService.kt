@@ -92,7 +92,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private val showAgain = Runnable { composeView?.animate()?.alpha(1f)?.setDuration(120)?.start() }
     private var resizeListener: View.OnLayoutChangeListener? = null
 
-    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings)
+    private data class WinKey(val kind: Int, val expanded: Boolean, val lyr: Boolean, val s: IslandSettings, val swallow: Boolean = false)
 
     override fun onCreate() {
         savedStateController.performAttach()
@@ -137,7 +137,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         // Pencere geometrisi yalnızca durum/ayar DEĞİŞİNCE güncellenir (kare başına değil)
         scope.launch {
-            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s) }
+            combine(ui, settings) { u, s -> WinKey(kindOf(u.content), u.expanded, u.compactLyrics, s, u.swallow) }
                 .distinctUntilChanged()
                 .collectLatest { syncWindow(it) }
         }
@@ -611,7 +611,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Müzikten çıkış animasyonu
-    private val SWALLOW_HOLD_MS = 1_800L     // ada şarkıyı yuttuktan sonra açık kalma süresi
+    private val SWALLOW_HOLD_MS = 450L       // ada büyük kaldıktan sonra eski haline dönme süresi
     private var swallowView: ComposeView? = null
     private var swallowWm: WindowManager? = null
 
@@ -634,13 +634,14 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             .any { it.packageName == pkg && it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING }
     }.getOrDefault(false)
 
-    /** Panel adaya varınca ada açılır (şarkı görünür), sonra kapalı müzik haline döner. */
+    /** Panel adaya varınca ada kısa süre büyüyüp onu yutar (içerik çizilmez), sonra kapalı müzik haline döner. */
     private fun swallowIsland() {
+        if (!settings.value.musicExitSwallow) return
         val m = lastMedia ?: return
         val c = ui.value.content
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
         collapseJob?.cancel()
-        update { IslandUiState(m, expanded = true) }
+        update { IslandUiState(m, expanded = true, swallow = true) }
         scheduleCollapse(SWALLOW_HOLD_MS)
     }
 
@@ -794,7 +795,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { attachEdgeGlow() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow)) }
     }
 
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
@@ -1205,6 +1206,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (blurOk) setBlur(true, s)
             }
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
+            k.expanded && k.swallow && music -> {
+                // Yutma efekti: pencere, büyüyen adanın boyutunda (tam açık panel kadar büyük değil)
+                val sz = swallowSizeDp(compactWidthFor(s, k.lyr), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
+                setBlur(false, s)
+                setGeometry(dp(sz.first) + 2 * pad, dp(sz.second) + 2 * pad, xExp, y)
+            }
             k.expanded && assistant && s.assistantFullWidth -> {
                 // Ada kutusu yok: pencere ekran genişliğinde, ada ile aynı üst hizada
                 setBlur(false, s)
@@ -1334,7 +1341,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun bringIslandToFront() {
         runCatching { detachOverlay() }
         safeAttachOverlay()
-        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
+        scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value, ui.value.swallow)) }
     }
 
     /** Sistem pencereyi istediğimizden farklı bir yere koyduysa (durum çubuğu payı vb.) farkı kadar geri çeker. */

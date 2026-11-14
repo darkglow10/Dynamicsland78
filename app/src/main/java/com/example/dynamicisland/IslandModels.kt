@@ -75,6 +75,8 @@ data class IslandUiState(
     val expanded: Boolean = false,
     /** Kapalı adada şarkı sözü gösteriliyor mu (ada bu durumda daha geniş olur). Servis hesaplar. */
     val compactLyrics: Boolean = false,
+    /** Müzikten çıkış "yutma" efekti: ada kısa süre büyüyüp (içeriksiz) eski haline döner. */
+    val swallow: Boolean = false,
 )
 
 // ---------------------------------------------------------------- Şarkı sözü modeli

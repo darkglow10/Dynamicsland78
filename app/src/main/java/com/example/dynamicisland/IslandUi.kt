@@ -85,6 +85,13 @@ fun islandGeo(cfg: IslandSettings, music: Boolean, compactLyrics: Boolean = fals
     eh = (cfg.expandedHeightDp + if (music) cfg.musicExtraDp() else 0f).dp,
 )
 
+/**
+ * Müzikten çıkış "yutma" efektinde adanın büyüdüğü boyut (dp): kapalı adadan biraz geniş, yaklaşık iki kat yüksek;
+ * açık ada boyutunu aşmaz. Hem arayüz hem pencere boyutu aynı formülü kullanır.
+ */
+fun swallowSizeDp(cw: Float, ch: Float, ew: Float, eh: Float): Pair<Float, Float> =
+    minOf(ew, cw * 1.15f).coerceAtLeast(cw) to minOf(eh, ch * 2.1f).coerceAtLeast(ch)
+
 // ---------------------------------------------------------------- Animasyon (5 stil + kapalı)
 /** Genişlik ve yükseklik ilerlemesi ayrı: "Sıvı" stilinde farklı zamanlanır, diğerlerinde aynıdır. */
 @Stable
@@ -174,7 +181,11 @@ fun IslandRoot(
             if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker)
+            if (s.swallow && content is IslandContent.Media) {
+                val sz = swallowSizeDp(geo.cw.value, geo.ch.value, geo.ew.value, geo.eh.value)
+                geo = geo.copy(ew = sz.first.dp, eh = sz.second.dp)
+            }
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker, swallow = s.swallow)
         }
     }
 }
@@ -386,6 +397,7 @@ fun IslandPill(
     onAnswer: () -> Unit = {},
     onDecline: () -> Unit = {},
     onSpeaker: () -> Unit = {},
+    swallow: Boolean = false,      // yutma efekti: ada büyür ama içerik çizilmez
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
@@ -466,7 +478,7 @@ fun IslandPill(
             CustomBackdrop(bgBoth, bgCompact, bgExpanded, cfg.customBgDim, geo, progress)
         }
 
-        if (panelVisible) {
+        if (panelVisible && !swallow) {
             Box(
                 Modifier
                     .requiredSize(geo.ew, geo.eh)

@@ -98,26 +98,27 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
     }
 }
 
-// ---- Müzik uygulamasından çıkış: panel adaya küçülür
-private const val SHRINK_BASE_MS = 460     // hız 1x iken küçülme süresi
-private const val SHRINK_FADE_MS = 140     // adaya varınca küçük şeklin silinmesi
-private const val SHRINK_APPEAR_MS = 120   // panelin yumuşakça belirmesi (ani kararma olmasın)
-private const val SWALLOW_AT = 0.8f        // küçülmenin bu noktasında ada şarkıyı yutmaya başlar
-private const val START_W_FRAC = 0.58f     // panelin başlangıç genişliği (ekran genişliğine oranı)
-private const val START_H_FRAC = 0.46f     // ... yüksekliği (ekran yüksekliğine oranı)
-private const val START_CY_FRAC = 0.56f    // ... ve dikey merkezi
+// ---- Müzik uygulamasından çıkış: uzun (telefon oranlı) panel adaya küçülür
+private const val SHRINK_BASE_MS = 420     // hız 1x iken küçülme süresi
+private const val SHRINK_FADE_MS = 120     // adaya varınca silinmesi
+private const val SHRINK_APPEAR_MS = 90    // yumuşakça belirme (ani kararma olmasın)
+private const val SWALLOW_AT = 0.55f       // küçülmenin bu noktasında ada büyüyüp yutmaya başlar
+private const val START_W_FRAC = 0.62f     // başlangıç genişliği (ekran genişliğine oranı); yükseklik ekran oranıyla gelir
+private const val START_TOP_FRAC = 0.30f   // başlangıçta panelin üst kenarı (ekran yüksekliğine oranı)
+private const val END_W_DP = 34f           // adaya girerken ince uzun şekil
+private const val END_H_DP = 56f
 
 private val ShrinkEasing = CubicBezierEasing(0.4f, 0f, 0.6f, 1f)
 
 /**
- * Ekranın ortasından belirip adaya doğru küçülen siyah panel (tam ekranı kaplamaz).
- * [onSwallow]: panel adaya yaklaşınca çağrılır (ada o an açılıp şarkıyı gösterir). Bitince [onFinished] gelir.
+ * Uygulama ekranı gibi uzun (ekranla aynı oranlı) siyah panel: aşağıdan yukarı adaya doğru daralarak küçülür.
+ * [onSwallow]: panel adaya yaklaşınca çağrılır (ada büyüyüp yutar). Bitince [onFinished] gelir.
  */
 @Composable
 fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit) {
     val swallow by rememberUpdatedState(onSwallow)
     val finished by rememberUpdatedState(onFinished)
-    val a = remember { Animatable(0f) }            // 0 = başlangıç kartı, 1 = adanın altında küçük şekil
+    val a = remember { Animatable(0f) }            // 0 = başlangıç paneli, 1 = adanın içinde ince şekil
     val appear = remember { Animatable(0f) }
     val fade = remember { Animatable(1f) }
     var origin by remember { mutableStateOf(Offset.Zero) }
@@ -142,23 +143,23 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val d = density
         val t = a.value
 
-        // Başlangıç: ekranın ortasında kart; bitiş: adanın alt kenarında küçük şekil
+        // Başlangıç: ekran oranında uzun panel (ekranı kaplamaz); bitiş: adanın içinde ince uzun şekil
         val w0 = size.width * START_W_FRAC
-        val h0 = size.height * START_H_FRAC
+        val h0 = w0 * (size.height / size.width)
+        val top0 = size.height * START_TOP_FRAC
         val cx0 = size.width / 2f
-        val cy0 = size.height * START_CY_FRAC
-        val w1 = START_W_DP * d
-        val h1 = START_H_DP * d
+        val w1 = END_W_DP * d
+        val h1 = END_H_DP * d
+        val top1 = spec.top + spec.h * 0.45f
         val cx1 = spec.cx
-        val cy1 = spec.top + spec.h + h1 * 0.15f
-        val w = w0 * (w1 / w0).pow(t)                  // üstel küçülme
+        val w = w0 * (w1 / w0).pow(t)                  // üstel daralma
         val h = h0 * (h1 / h0).pow(t)
+        val top = top0 + (top1 - top0) * t             // üst kenar adaya doğru yükselir
         val cx = cx0 + (cx1 - cx0) * t
-        val cy = cy0 + (cy1 - cy0) * t
         val radius = minOf(CORNER_DP * d, minOf(w, h) / 2f)
 
         translate(-origin.x, -origin.y) {
-            drawRoundRect(Color.Black, Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
+            drawRoundRect(Color.Black, Offset(cx - w / 2f, top), Size(w, h), CornerRadius(radius))
         }
     }
 }
