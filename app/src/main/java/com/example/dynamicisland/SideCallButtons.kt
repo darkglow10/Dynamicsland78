@@ -34,6 +34,7 @@ import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // ---------------------------------------------------------------- Ayarlar
@@ -92,7 +93,14 @@ class SideCallOverlay(
     private val savedOwner: SavedStateRegistryOwner,
     private val wm: WindowManager,
 ) {
-    private class Entry(val dialog: Dialog, val view: ComposeView)
+    private class Entry(
+        val dialog: Dialog, val view: ComposeView,
+        val w: Int, val h: Int, val x: Int, val wantY: Int,
+    ) {
+        var calib = 0          // sistemin içeriği aşağı kaydırdığı miktar (px)
+        var tries = 0
+        var check: Runnable? = null
+    }
 
     private val entries = mutableListOf<Entry>()
     private var shown: SideCallPrefs? = null
@@ -110,6 +118,7 @@ class SideCallOverlay(
     fun hide() {
         for (e in entries) {
             runCatching {
+                e.check?.let { r -> e.view.removeCallbacks(r) }
                 e.view.disposeComposition()
                 e.view.setViewTreeLifecycleOwner(null)
                 e.view.setViewTreeSavedStateRegistryOwner(null)
@@ -155,20 +164,51 @@ class SideCallOverlay(
             setDecorFitsSystemWindows(false)
             decorView.setPadding(0, 0, 0, 0)
             val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
-            lp.width = w; lp.height = h
-            lp.x = dp(SIDE_MARGIN_DP); lp.y = y
+            lp.width = 1; lp.height = 1          // önce küçük aç, boyut / konum gösterildikten sonra verilir (ada ile aynı yöntem)
+            lp.x = 0; lp.y = 0
             lp.format = PixelFormat.TRANSLUCENT
             lp.fitInsetsTypes = 0
             lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             attributes = lp
-            if (Build.VERSION.SDK_INT >= 31 && p.blurDp > 0 && wm.isCrossWindowBlurEnabled) {
-                setBackgroundBlurRadius(dp(p.blurDp.toFloat()))
-            }
         }
         dlg.window?.decorView?.let { stripInsets(it) }
         dlg.show()
         dlg.window?.decorView?.let { stripInsets(it) }
-        return Entry(dlg, view)
+        val e = Entry(dlg, view, w, h, dp(SIDE_MARGIN_DP), y)
+        applyGeometry(e)
+        if (Build.VERSION.SDK_INT >= 31 && p.blurDp > 0 && wm.isCrossWindowBlurEnabled) {
+            dlg.window?.setBackgroundBlurRadius(dp(p.blurDp.toFloat()))
+        }
+        scheduleCalibrate(e)
+        return e
+    }
+
+    /** Pencereyi gerçek boyut ve konumuna getirir; [Entry.calib] kadar yukarı alıp o kadar yükseltir. */
+    private fun applyGeometry(e: Entry) {
+        val win = e.dialog.window ?: return
+        // Yeni nesne: aynı nesneyi geri atamak WindowManager güncellemesini tetiklemez
+        val lp = WindowManager.LayoutParams().also { it.copyFrom(win.attributes) }
+        lp.width = e.w; lp.height = e.h + e.calib
+        lp.x = e.x; lp.y = e.wantY - e.calib
+        win.attributes = lp
+    }
+
+    /** Sistem içeriği aşağı kaydırdıysa (içerik alttan kırpılıyordu) farkı ölçüp pencereyi düzeltir. */
+    private fun scheduleCalibrate(e: Entry) {
+        val r = Runnable {
+            if (!e.view.isAttachedToWindow || e.tries >= 3) return@Runnable
+            val loc = IntArray(2)
+            e.view.getLocationOnScreen(loc)
+            val dy = loc[1] - e.wantY
+            if (abs(dy) > 2) {
+                e.tries++
+                e.calib = (e.calib + dy).coerceIn(-300, 600)
+                applyGeometry(e)
+                scheduleCalibrate(e)
+            }
+        }
+        e.check = r
+        e.view.postDelayed(r, 150)
     }
 
     private fun stripInsets(dv: View) {
