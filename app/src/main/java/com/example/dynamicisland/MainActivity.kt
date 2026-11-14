@@ -32,6 +32,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -199,15 +201,16 @@ private fun AppRoot() {
             // Alttaki yüzen çubuğun altında kalmasın diye içeriğe alttan boşluk bırakılır
             Box(Modifier.weight(1f).padding(bottom = FloatingTabsHeight + 24.dp)) {
                 when (shown) {
-                    0 -> SetupScreen()
-                    1 -> key(1) { SettingsScreen(lyricsPage = false) }
+                    0 -> HomeScreen()
+                    1 -> SetupScreen()
+                    2 -> key(2) { SettingsScreen(lyricsPage = false) }
                     else -> key(2) { SettingsScreen(lyricsPage = true) }
                 }
             }
         }
         BottomFloatingTabs(
-            labels = listOf("Kurulum", "Ayarlar", "Sözler"),
-            glyphs = listOf("◉", "≡", "Aa"),   // Kurulum, Ayarlar, Sözler
+            labels = listOf("Ana Sayfa", "Kurulum", "Ayarlar", "Sözler"),
+            glyphs = listOf("⌂", "◉", "≡", "Aa"),   // Ana Sayfa, Kurulum, Ayarlar, Sözler
             selected = tab,
             onSelect = { tab = it },
             modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -216,6 +219,12 @@ private fun AppRoot() {
 }
 
 private val FloatingTabsHeight = 68.dp
+
+/** Ana Sayfa sekmesi (şimdilik boş, içerik sonra eklenecek). */
+@Composable
+private fun HomeScreen() {
+    Box(Modifier.fillMaxSize())
+}
 
 /**
  * Altta yüzen sekme çubuğu.
@@ -301,13 +310,39 @@ private fun BottomFloatingTabs(
 }
 
 /**
- * Sekme simgesi. Üç simge de aynı yükseklikte (28 dp) bir kutuya konur, böylece alttaki yazılar hizalı kalır.
+ * Sekme simgesi. Tüm simgeler aynı yükseklikte (28 dp) bir kutuya konur, böylece alttaki yazılar hizalı kalır.
  * "◉" ve "≡" yazı karakteri yerine çizilir (font'a göre küçük kalıyordu); "Aa" yazı olarak kalır.
  */
 @Composable
 private fun TabGlyph(glyph: String, color: Color) {
     Box(Modifier.height(28.dp), contentAlignment = Alignment.Center) {
         when (glyph) {
+            "⌂" -> Canvas(Modifier.size(26.dp)) {
+                val sw = 2.4.dp.toPx()
+                val w = size.width
+                val h = size.height
+                val roof = Path().apply {
+                    moveTo(w * 0.06f, h * 0.50f)
+                    lineTo(w * 0.50f, h * 0.10f)
+                    lineTo(w * 0.94f, h * 0.50f)
+                }
+                val body = Path().apply {
+                    moveTo(w * 0.18f, h * 0.42f)
+                    lineTo(w * 0.18f, h * 0.88f)
+                    lineTo(w * 0.82f, h * 0.88f)
+                    lineTo(w * 0.82f, h * 0.42f)
+                }
+                val door = Path().apply {
+                    moveTo(w * 0.42f, h * 0.88f)
+                    lineTo(w * 0.42f, h * 0.62f)
+                    lineTo(w * 0.58f, h * 0.62f)
+                    lineTo(w * 0.58f, h * 0.88f)
+                }
+                val st = Stroke(width = sw, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                drawPath(roof, color, style = st)
+                drawPath(body, color, style = st)
+                drawPath(door, color, style = st)
+            }
             "◉" -> Canvas(Modifier.size(24.dp)) {
                 val sw = 2.4.dp.toPx()
                 drawCircle(color, radius = size.minDimension / 2f - sw / 2f, style = Stroke(width = sw))
