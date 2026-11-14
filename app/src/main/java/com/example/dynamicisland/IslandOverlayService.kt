@@ -617,9 +617,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
     /**
      * "Durum çubuğunu gizle": durum çubuğunun üstüne dokunmatik olmayan bir pencere çizilir.
-     * - "Cam efekti" açıksa (ve cihaz bulanıklığı destekliyorsa): buzlu cam. Pencerenin arkası bulanıklaştırılır,
-     *   üstüne hafif koyu bir ton biner; durum çubuğu simgeleri okunmaz hale gelir.
-     * - Aksi halde: düz siyah.
+     * - Cihaz pencere bulanıklığını destekliyorsa (Android 12+): buzlu cam. Pencerenin arkası bulanıklaştırılır,
+     *   üstüne hafif koyu bir ton biner; durum çubuğu simgeleri okunmaz hale gelir. "Cam efekti" ayarından bağımsızdır.
+     * - Desteklenmiyorsa: düz siyah.
      * Yalnızca erişilebilirlik servisi bağlıyken çalışır (TYPE_ACCESSIBILITY_OVERLAY durum çubuğunun üstünde durur).
      */
     private var statusCoverDialog: Dialog? = null
@@ -635,7 +635,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     private fun coverIsGlass(): Boolean =
-        Build.VERSION.SDK_INT >= 31 && settings.value.glassEnabled && wm.isCrossWindowBlurEnabled
+        Build.VERSION.SDK_INT >= 31 && wm.isCrossWindowBlurEnabled
 
     /** Örtünün rengini ve bulanıklığını moda göre ayarlar (cam: ince koyu ton + bulanıklık, değilse düz siyah). */
     private fun styleCover() {
@@ -1120,6 +1120,6 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 /** Ana Sayfa > Dene bölümündeki sahte arama olayının anahtarı. */
 const val DEMO_CALL_KEY = "demo_call"
 
-/** Durum çubuğu örtüsü (cam modu): arka plan bulanıklığı (px) ve koyu ton (0..255). */
+/** Durum çubuğu örtüsü (bulanık mod): arka plan bulanıklığı (px) ve koyu ton (0..255). */
 private const val COVER_BLUR_PX = 120
 private const val COVER_GLASS_TINT = 110
