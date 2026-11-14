@@ -154,7 +154,7 @@ fun IslandRoot(
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
-            if (content is IslandContent.Call) geo = geo.copy(eh = 74.dp)
+            if (content is IslandContent.Call) geo = geo.copy(eh = if (content.isIncoming) 74.dp else 88.dp)
             if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
@@ -816,7 +816,7 @@ private fun CallContent(
     onSpeaker: () -> Unit,
 ) {
     val incoming = c.isIncoming
-    val avatarSize = 50.dp
+    val avatarSize = if (incoming) 52.dp else 48.dp
     Row(
         Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -846,28 +846,38 @@ private fun CallContent(
             }
         }
 
-        // İsim + durum: üstte küçük gri "mobile" (aktif aramada süre), altta kalın isim
+        // İsim + durum
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            Text(
-                if (incoming) "mobile" else (c.duration ?: "0:00"),
-                color = Color.White.copy(alpha = 0.60f), fontSize = 14.sp, maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
-            )
+            if (incoming) {
+                Text(
+                    "Gelen arama", color = Color.White.copy(alpha = 0.60f), fontSize = 13.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
+                )
+            } else {
+                Text(
+                    c.duration ?: "Aktif arama", color = CallGreen, fontWeight = FontWeight.Medium,
+                    fontSize = 15.sp, maxLines = 1,
+                )
+                Text(
+                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
+                )
+            }
         }
 
         // Butonlar: gelen aramada kırmızı + yeşil; aktif aramada hoparlör + kırmızı
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!incoming) {
-                CallButton(if (c.speaker) Color.White else SpeakerOff, 46.dp, onSpeaker) { sz ->
+                CallButton(if (c.speaker) Color.White else SpeakerOff, 50.dp, onSpeaker) { sz ->
                     SpeakerIcon(c.speaker, if (c.speaker) Color.Black else Color.White, Modifier.size(sz + 4.dp))
                 }
             }
-            CallButton(DeclineColor, if (incoming) 50.dp else 46.dp, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }
-            if (incoming) CallButton(AnswerColor, 50.dp, onAnswer) { sz -> PhoneIcon(0f, Modifier.size(sz)) }
+            CallButton(DeclineColor, if (incoming) 52.dp else 50.dp, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }
+            if (incoming) CallButton(AnswerColor, 52.dp, onAnswer) { sz -> PhoneIcon(0f, Modifier.size(sz)) }
         }
     }
 }
