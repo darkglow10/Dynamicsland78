@@ -150,6 +150,15 @@ fun IslandRoot(
         active = lyricsOn && lyrics is LyricsState.Ready, fine = cfg.lyricsFillEnabled,
     )
 
+    // Tam genişlik asistan: ada kutusu yok, pencere ekran genişliğinde; animasyon doğrudan çizilir
+    if (content is IslandContent.Assistant && cfg.assistantFullWidth) {
+        var shown by remember { mutableStateOf(false) }
+        LaunchedEffect(s.expanded) { shown = s.expanded }
+        val barAlpha by animateFloatAsState(if (shown) 1f else 0f, tween(if (shown) 350 else 250), label = "orbBar")
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = barAlpha }) { AssistantOrb(fullWidth = true) }
+        return
+    }
+
     // Pencere, ada + parıltı payı kadar sabit boyutlu; ada üst-ortada büyür/küçülür
     Box(Modifier.fillMaxSize().padding(cfg.windowPadDp().dp), contentAlignment = Alignment.TopCenter) {
         // Boştayken de göster açıksa Idle içerikte de (boş) ada çizilir; kapalıysa hiçbir şey çizilmez.

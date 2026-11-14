@@ -66,7 +66,7 @@ private val SIRI = arrayOf(
     Color(0xFFFF9500), Color(0xFFFFD60A), Color(0xFFFFFFFF), Color(0xFF64D2FF), Color(0xFF0A84FF),
 )
 
-internal fun siriColor(t: Float, alpha: Float = 1f): Color {
+private fun siriColor(t: Float, alpha: Float = 1f): Color {
     val n = SIRI.size - 1
     val x = (((t % 1f) + 1f) % 1f) * n
     val i = x.toInt().coerceIn(0, n - 1)
@@ -76,10 +76,6 @@ internal fun siriColor(t: Float, alpha: Float = 1f): Color {
 private const val STEPS = 48
 private const val SAMPLES = 9
 
-// Uçların sabit kalacağı bölge: merkezden uzaklık (0 = orta, 1 = uç). START'a kadar tam dalga, END'den sonra tamamen sabit.
-private const val WAVE_FIXED_START = 0.35f
-private const val WAVE_FIXED_END = 0.75f
-
 /**
  * Siri / Gemini benzeri asistan animasyonu. Çizginin KENDİSİ animasyondur: ortada kalın, dalgalı,
  * uçlara doğru sivrilen bir bant; rengi (mavi/mor/kırmızı/turuncu/sarı/beyaz/cyan) boyunca akar ve
@@ -87,7 +83,7 @@ private const val WAVE_FIXED_END = 0.75f
  * mat gri bir geçiş var (videodaki cam yansıması). Değerler yalnızca çizim fazında okunur.
  */
 @Composable
-fun AssistantOrb() {
+fun AssistantOrb(fullWidth: Boolean = false) {
     val t = rememberInfiniteTransition(label = "orb")
     // Dalga fazı ve renk fazı: tam döngüde başa sorunsuz döner (zamanla çarpanlar tam sayı)
     val wave = t.animateFloat(0f, 1f, infiniteRepeatable(tween(3600, easing = LinearEasing)), label = "wave")
@@ -112,11 +108,12 @@ fun AssistantOrb() {
         val pi = PI.toFloat()
 
         val cy = h * 0.60f
-        val x0 = w * 0.03f
-        val span = w * 0.94f
+        // Tam genişlikte animasyon ekranın iki kenarına kadar uzanır; ada kutusuna ait cam efektleri çizilmez
+        val x0 = if (fullWidth) 0f else w * 0.03f
+        val span = if (fullWidth) w else w * 0.94f
 
         // 1) Alt kenarda mat gri geçiş (cam yansıması)
-        drawRect(
+        if (!fullWidth) drawRect(
             Brush.verticalGradient(
                 colorStops = arrayOf(0.60f to Color.Transparent, 1f to Color(0xFFAEB4BE).copy(alpha = 0.62f)),
             ),
@@ -126,18 +123,11 @@ fun AssistantOrb() {
         for (i in 0..STEPS) {
             val u = i / STEPS.toFloat()
             val env = sin(pi * u).coerceAtLeast(0f).pow(0.7f)
-            // Uçlar sabit, dalga yalnızca ortada: merkezden uzaklaştıkça dalga ağırlığı 0'a iner
-            val d = kotlin.math.abs(u - 0.5f) * 2f
-            val q = ((d - WAVE_FIXED_START) / (WAVE_FIXED_END - WAVE_FIXED_START)).coerceIn(0f, 1f)
-            val ww = 1f - q * q * (3f - 2f * q)
             val tilt = (u - 0.5f) * h * 0.18f * sin(tau * p + 0.4f)
-            yc[i] = cy + ww * (
-                tilt +
-                    env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
-                    env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
-                )
-            val dynThick = b * (0.65f + 0.4f * sin(tau * (u * 1.7f + p)))
-            th[i] = h * 0.145f * env * (0.65f + (dynThick - 0.65f) * ww)
+            yc[i] = cy + tilt +
+                env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
+                env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
+            th[i] = h * 0.145f * b * (0.65f + 0.4f * sin(tau * (u * 1.7f + p))) * env
         }
         val cols = List(SAMPLES) { k ->
             val s = k / (SAMPLES - 1).toFloat()
@@ -199,7 +189,7 @@ fun AssistantOrb() {
         }
 
         // 5) Cam hissi: sol üstte hafif parlama
-        drawRect(
+        if (!fullWidth) drawRect(
             Brush.radialGradient(
                 0f to Color.White.copy(alpha = 0.12f), 1f to Color.Transparent,
                 center = Offset(w * 0.30f, h * 0.08f), radius = w * 0.30f,

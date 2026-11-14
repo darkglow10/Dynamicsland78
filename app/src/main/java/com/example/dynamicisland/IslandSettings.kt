@@ -93,6 +93,7 @@ data class IslandSettings(
     val assistantEnabled: Boolean = true,
     val assistantWidthDp: Float = 150f,
     val assistantHeightDp: Float = 112f,
+    val assistantFullWidth: Boolean = false,  // ada kutusu yok; renkli animasyon ekranın solundan sağına uzanır
 
     // Gökkuşağı modu
     val rainbowEnabled: Boolean = false,
@@ -202,7 +203,7 @@ class SettingsRepository(context: Context) {
         val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
-        val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h")
+        val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full")
         val RB_ON = booleanPreferencesKey("rb_on"); val RB_A = floatPreferencesKey("rb_a")
 
         val LY_ON = booleanPreferencesKey("ly_on"); val LY_PANEL = booleanPreferencesKey("ly_panel")
@@ -273,6 +274,7 @@ class SettingsRepository(context: Context) {
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
             assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
+            assistantFullWidth = p[K.AS_FULL] ?: d.assistantFullWidth,
             rainbowEnabled = p[K.RB_ON] ?: d.rainbowEnabled,
             rainbowAlpha = p[K.RB_A] ?: d.rainbowAlpha,
             lyricsEnabled = p[K.LY_ON] ?: d.lyricsEnabled,
@@ -328,6 +330,7 @@ class SettingsRepository(context: Context) {
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp
+            it[K.AS_FULL] = s.assistantFullWidth
             it[K.RB_ON] = s.rainbowEnabled; it[K.RB_A] = s.rainbowAlpha
             it[K.LY_ON] = s.lyricsEnabled; it[K.LY_PANEL] = s.lyricsInPanel
             it[K.LY_COMPACT] = s.lyricsCompact; it[K.LY_OUT] = s.lyricsOutside

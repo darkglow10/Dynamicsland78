@@ -1104,6 +1104,11 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (blurOk) setBlur(true, s)
             }
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
+            k.expanded && assistant && s.assistantFullWidth -> {
+                // Ada kutusu yok: pencere ekran genişliğinde, ada ile aynı üst hizada
+                setBlur(false, s)
+                setGeometry(screenW, eh, 0, y + pad)
+            }
             k.expanded -> {
                 setBlur(false, s)
                 setGeometry(ew + 2 * pad, eh + 2 * pad, xExp, y)
