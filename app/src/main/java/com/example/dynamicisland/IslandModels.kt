@@ -35,6 +35,7 @@ sealed interface IslandContent {
         val isIncoming: Boolean,
         val duration: String? = null,     // aktif aramada "0:01"
         val avatar: ImageBitmap? = null,
+        val speaker: Boolean = false,     // hoparlör açık mı (aktif aramada)
     ) : IslandContent
 
     /** Kısa durum bildirimi: zil modu, şarj, zamanlayıcı, alarm. */

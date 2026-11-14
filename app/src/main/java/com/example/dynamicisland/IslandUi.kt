@@ -121,6 +121,7 @@ fun IslandRoot(
     onLaunch: (String) -> Unit = {},
     onAnswer: () -> Unit = {},
     onDecline: () -> Unit = {},
+    onSpeaker: () -> Unit = {},
 ) {
     val s by state.collectAsState()
     val cfg by settingsFlow.collectAsState()
@@ -153,11 +154,11 @@ fun IslandRoot(
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
-            if (content is IslandContent.Call) geo = geo.copy(eh = if (content.isIncoming) 74.dp else 88.dp)
+            if (content is IslandContent.Call) geo = geo.copy(eh = 74.dp)
             if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
-            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline)
+            IslandPill(content, progress, geo, cfg, lyrics, frame, s.compactLyrics, onTap, onCommand, onOutput, onLongPress, onLaunch, onAnswer, onDecline, onSpeaker)
         }
     }
 }
@@ -368,6 +369,7 @@ fun IslandPill(
     onLaunch: (String) -> Unit = {},
     onAnswer: () -> Unit = {},
     onDecline: () -> Unit = {},
+    onSpeaker: () -> Unit = {},
 ) {
     // Dokunma ve basılı tutma: lambdalar güncellense de hareket algılayıcısı yeniden kurulmaz
     val tapNow by rememberUpdatedState(onTap)
@@ -456,7 +458,7 @@ fun IslandPill(
             ) {
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
-                    is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline)
+                    is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline, onSpeaker)
                     is IslandContent.Status ->
                         if (content.kind == StatusKind.Charging) ChargeContent(content, rb) else StatusContent(content, rb)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
@@ -764,28 +766,43 @@ private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier) {
 /** Ahize simgesinin ek kalınlığı (24x24'lük simge birimi). Artırınca daha kalın olur. */
 private const val PHONE_THICKEN = 1.9f
 
-// Cevapla / Reddet düğmeleri: canlı kırmızı ve yeşil, üstten alta hafif renk geçişi
-private val AnswerTop = Color(0xFF45DB4F)
-private val AnswerBottom = Color(0xFF1FB52F)
-private val DeclineTop = Color(0xFFFF4437)
-private val DeclineBottom = Color(0xFFE01409)
+// Cevapla / Reddet düğmeleri: iOS tarzı düz (gradyansız) kırmızı ve yeşil daireler
+private val AnswerColor = Color(0xFF34C759)
+private val DeclineColor = Color(0xFFFF3B30)
+private val SpeakerOff = Color.White.copy(alpha = 0.16f)
 
 @Composable
-private fun CallButton(top: Color, bottom: Color, rotation: Float, size: Dp, onClick: () -> Unit) {
+private fun CallButton(color: Color, size: Dp, onClick: () -> Unit, content: @Composable (Dp) -> Unit) {
     Box(
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(Brush.verticalGradient(listOf(top, bottom)), CircleShape)
-            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
+            .background(color, CircleShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
-    ) {
-        PhoneIcon(rotation, Modifier.size(size * 0.50f))
+    ) { content(size * 0.50f) }
+}
+
+// Hoparlör simgesi (ses dalgalı); kapalıyken dış dalga yok
+@Composable
+private fun SpeakerIcon(on: Boolean, tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val sc = size.width / 24f
+        withTransform({ scale(sc, sc, Offset.Zero) }) {
+            val body = Path().apply {
+                moveTo(3f, 9.5f); lineTo(7f, 9.5f); lineTo(12f, 5f)
+                lineTo(12f, 19f); lineTo(7f, 14.5f); lineTo(3f, 14.5f); close()
+            }
+            drawPath(body, tint)
+            drawPath(body, tint, style = Stroke(width = 1.2f, join = StrokeJoin.Round))
+            val st = Stroke(width = 2f, cap = StrokeCap.Round)
+            drawArc(tint, -45f, 90f, false, Offset(8.5f, 7.5f), Size(9f, 9f), style = st)
+            if (on) drawArc(tint, -50f, 100f, false, Offset(5f, 3.5f), Size(16f, 17f), style = st)
+        }
     }
 }
 
@@ -796,9 +813,10 @@ private fun CallContent(
     rb: RainbowStyle?,
     onAnswer: () -> Unit,
     onDecline: () -> Unit,
+    onSpeaker: () -> Unit,
 ) {
     val incoming = c.isIncoming
-    val avatarSize = if (incoming) 52.dp else 48.dp
+    val avatarSize = 50.dp
     Row(
         Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -828,33 +846,28 @@ private fun CallContent(
             }
         }
 
-        // İsim + durum
+        // İsim + durum: üstte küçük gri "mobile" (aktif aramada süre), altta kalın isim
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-            if (incoming) {
-                Text(
-                    "Gelen arama", color = Color.White.copy(alpha = 0.60f), fontSize = 13.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
-                )
-            } else {
-                Text(
-                    c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 19.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
-                )
-                Text(
-                    c.duration ?: "Aktif arama", color = CallGreen, fontWeight = FontWeight.Medium,
-                    fontSize = 15.sp, maxLines = 1,
-                )
-            }
+            Text(
+                if (incoming) "mobile" else (c.duration ?: "0:00"),
+                color = Color.White.copy(alpha = 0.60f), fontSize = 14.sp, maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb),
+            )
         }
 
-        // Butonlar: kırmızı (reddet / kapat) + gelen aramada yeşil (cevapla)
+        // Butonlar: gelen aramada kırmızı + yeşil; aktif aramada hoparlör + kırmızı
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            CallButton(DeclineTop, DeclineBottom, 135f, if (incoming) 52.dp else 50.dp, onDecline)
-            if (incoming) CallButton(AnswerTop, AnswerBottom, 0f, 52.dp, onAnswer)
+            if (!incoming) {
+                CallButton(if (c.speaker) Color.White else SpeakerOff, 46.dp, onSpeaker) { sz ->
+                    SpeakerIcon(c.speaker, if (c.speaker) Color.Black else Color.White, Modifier.size(sz + 4.dp))
+                }
+            }
+            CallButton(DeclineColor, if (incoming) 50.dp else 46.dp, onDecline) { sz -> PhoneIcon(135f, Modifier.size(sz)) }
+            if (incoming) CallButton(AnswerColor, 50.dp, onAnswer) { sz -> PhoneIcon(0f, Modifier.size(sz)) }
         }
     }
 }

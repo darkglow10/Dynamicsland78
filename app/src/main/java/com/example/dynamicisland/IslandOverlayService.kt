@@ -304,6 +304,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var callDecline: android.app.PendingIntent? = null
     private var callTickJob: Job? = null
     private var callEndJob: Job? = null
+    private var callSpeaker = false
 
     private fun onCall(e: IslandEvent.Call) {
         callEndJob?.cancel()
@@ -327,7 +328,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     private fun publishCall() {
         val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
-        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar), expanded = true) }
+        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = true) }
     }
 
     private fun formatCallDuration(ms: Long): String {
@@ -345,6 +346,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             if (callKey != key) return@launch
             callTickJob?.cancel()
             callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
+            setSpeaker(false)
             if (ui.value.content is IslandContent.Call) collapseAndRest()
         }
     }
@@ -369,6 +371,29 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         }
         sendCallIntent(callAnswer)
     }
+    /** Hoparlörü açar / kapatır (aktif arama ekranındaki hoparlör düğmesi). */
+    private fun setSpeaker(on: Boolean) {
+        callSpeaker = on
+        runCatching {
+            val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+            if (Build.VERSION.SDK_INT >= 31) {
+                if (on) {
+                    am.availableCommunicationDevices
+                        .firstOrNull { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                        ?.let { am.setCommunicationDevice(it) }
+                } else am.clearCommunicationDevice()
+            } else {
+                @Suppress("DEPRECATION")
+                am.isSpeakerphoneOn = on
+            }
+        }
+    }
+
+    private fun onCallSpeaker() {
+        setSpeaker(!callSpeaker)
+        publishCall()
+    }
+
     private fun onCallDecline() {
         if (callKey == DEMO_CALL_KEY) { IslandBus.post(IslandEvent.CallEnded(DEMO_CALL_KEY)); return }
         sendCallIntent(callDecline)
@@ -733,7 +758,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                     state = ui, settingsFlow = settings, lyricsFlow = lyrics,
                     onTap = ::onPillTap, onCommand = ::onCommand, onOutput = ::openOutputPanel,
                     onLongPress = ::onPillLongPress, onLaunch = ::launchFavorite,
-                    onAnswer = ::onCallAnswer, onDecline = ::onCallDecline,
+                    onAnswer = ::onCallAnswer, onDecline = ::onCallDecline, onSpeaker = ::onCallSpeaker,
                 )
             }
         }
