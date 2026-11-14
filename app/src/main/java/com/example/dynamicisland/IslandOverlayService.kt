@@ -624,7 +624,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val c = ui.value.content
         if (c !is IslandContent.Media && c !is IslandContent.Idle) return
         if (!isPlayingMediaApp(from)) return
-        startSwallowTransition()
+        swallowIsland()                 // ada önce açılır (yutmaya hazırlanır)
+        startSwallowTransition()        // panel, ada açılırken kısa gecikmeyle başlar
     }
 
     /** [pkg], şu an çalan bir medya oturumunun uygulaması mı? (Bildirim erişimi açıksa okunabilir.) */

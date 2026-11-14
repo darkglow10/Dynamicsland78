@@ -102,6 +102,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
 private const val SHRINK_BASE_MS = 320     // hız 1x iken küçülme süresi
 private const val SHRINK_FADE_MS = 120     // adaya varınca silinmesi
 private const val SHRINK_APPEAR_MS = 40    // yumuşakça belirme (ani kararma olmasın)
+private const val PANEL_DELAY_MS = 110L     // ada açıldıktan sonra panelin başlama gecikmesi (hız 1x)
 private const val SWALLOW_AT = 0.10f       // küçülmenin bu noktasında ada büyüyüp yutmaya başlar
 private const val START_W_FRAC = 0.62f     // başlangıç genişliği (ekran genişliğine oranı); yükseklik ekran oranıyla gelir
 private const val START_TOP_FRAC = 0.30f   // başlangıçta panelin üst kenarı (ekran yüksekliğine oranı)
@@ -125,6 +126,7 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
     val ms = (SHRINK_BASE_MS / spec.speed.coerceIn(0.25f, 4f)).toInt()
 
     LaunchedEffect(Unit) {
+        delay((PANEL_DELAY_MS / spec.speed.coerceIn(0.25f, 4f)).toLong())   // ada önce açılsın
         launch { appear.animateTo(1f, tween(SHRINK_APPEAR_MS)) }
         var fired = false
         a.animateTo(1f, tween(ms, easing = ShrinkEasing)) {
