@@ -7,6 +7,10 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -832,28 +836,31 @@ private fun SpeakerIcon(on: Boolean, tint: Color, modifier: Modifier = Modifier)
 /** Küçük adadaki ses dalgası: yeşil -> beyaz -> turuncu renk geçişli, hareketli çubuklar. */
 @Composable
 private fun CallWave(modifier: Modifier = Modifier) {
-    val tr = androidx.compose.animation.core.rememberInfiniteTransition(label = "wave")
-    val phase by tr.animateFloat(
-        0f, (2 * Math.PI).toFloat(),
-        androidx.compose.animation.core.infiniteRepeatable(
-            tween(1500, easing = androidx.compose.animation.core.LinearEasing),
-        ),
+    val tr = rememberInfiniteTransition(label = "wave")
+    val phase: Float by tr.animateFloat(
+        initialValue = 0f,
+        targetValue = 6.2831855f,
+        animationSpec = infiniteRepeatable(tween(1500, easing = LinearEasing)),
         label = "wavePhase",
     )
-    val green = Color(0xFF4CE06A); val orange = Color(0xFFFF9248)
+    val green = Color(0xFF4CE06A)
+    val orange = Color(0xFFFF9248)
     Canvas(modifier) {
         val n = 9
-        val gap = size.width / n
-        val bw = gap * 0.52f
+        val gap: Float = size.width / n
+        val bw: Float = gap * 0.52f
         for (i in 0 until n) {
-            val t = i / (n - 1f)
-            val env = 1f - kotlin.math.abs(t - 0.5f) * 1.1f                          // ortada yüksek, kenarda alçak
-            val v = 0.30f + 0.70f * kotlin.math.abs(kotlin.math.sin(phase + i * 0.85f))
-            val h = (size.height * env * v).coerceAtLeast(bw)
-            val color = if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Color.White, t * 2f)
-                        else androidx.compose.ui.graphics.lerp(Color.White, orange, (t - 0.5f) * 2f)
-            val x = gap * i + gap / 2f
-            drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
+            val t: Float = i / (n - 1).toFloat()
+            val env: Float = 1f - kotlin.math.abs(t - 0.5f) * 1.1f                   // ortada yüksek, kenarda alçak
+            val v: Float = 0.30f + 0.70f * kotlin.math.abs(kotlin.math.sin(phase + i * 0.85f))
+            val h: Float = (size.height * env * v).coerceAtLeast(bw)
+            val color: Color =
+                if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Color.White, t * 2f)
+                else androidx.compose.ui.graphics.lerp(Color.White, orange, (t - 0.5f) * 2f)
+            val x: Float = gap * i + gap / 2f
+            val y1: Float = (size.height - h) / 2f
+            val y2: Float = (size.height + h) / 2f
+            drawLine(color, Offset(x, y1), Offset(x, y2), strokeWidth = bw, cap = StrokeCap.Round)
         }
     }
 }
