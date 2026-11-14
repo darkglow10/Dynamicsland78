@@ -114,10 +114,12 @@ private fun specFor(cfg: IslandSettings, expanding: Boolean, isWidth: Boolean): 
 }
 
 @Composable
-fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean): IslandProgress {
+fun rememberIslandProgress(cfg: IslandSettings, expanded: Boolean, fast: Boolean = false): IslandProgress {
     val target = if (expanded) 1f else 0f
-    val pw = animateFloatAsState(target, specFor(cfg, expanded, true), label = "pw")
-    val ph = animateFloatAsState(target, specFor(cfg, expanded, false), label = "ph")
+    // Yutma efekti: ada panel adaya varmadan büyümüş olsun diye ayardaki stil yerine kısa, düz bir animasyon
+    val fastSpec: FiniteAnimationSpec<Float> = if (cfg.animEnabled) tween(160, easing = LinearOutSlowInEasing) else snap()
+    val pw = animateFloatAsState(target, if (fast) fastSpec else specFor(cfg, expanded, true), label = "pw")
+    val ph = animateFloatAsState(target, if (fast) fastSpec else specFor(cfg, expanded, false), label = "ph")
     return remember(pw, ph) { IslandProgress(pw, ph) }
 }
 
@@ -147,10 +149,10 @@ fun IslandRoot(
     val wantExpanded = s.expanded   // arama: açık/küçük durumunu servis belirler (gelen arama hep açık)
     var animExpanded by remember { mutableStateOf(wantExpanded) }
     LaunchedEffect(wantExpanded) {
-        if (wantExpanded && cfg.animEnabled) delay(EXPAND_LEAD_MS)
+        if (wantExpanded && cfg.animEnabled && !s.swallow) delay(EXPAND_LEAD_MS)
         animExpanded = wantExpanded
     }
-    val progress = rememberIslandProgress(cfg, animExpanded)
+    val progress = rememberIslandProgress(cfg, animExpanded, s.swallow)
     val lyricsOn = cfg.lyricsEnabled && (cfg.lyricsInPanel || cfg.lyricsCompact)
     val frame = rememberLyricFrame(
         media, lyrics, cfg.lyricsOffsetMs.toLong(),

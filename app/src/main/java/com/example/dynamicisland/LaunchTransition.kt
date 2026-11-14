@@ -102,7 +102,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
 private const val SHRINK_BASE_MS = 320     // hız 1x iken küçülme süresi
 private const val SHRINK_FADE_MS = 120     // adaya varınca silinmesi
 private const val SHRINK_APPEAR_MS = 40    // yumuşakça belirme (ani kararma olmasın)
-private const val SWALLOW_AT = 0.28f       // küçülmenin bu noktasında ada büyüyüp yutmaya başlar
+private const val SWALLOW_AT = 0.10f       // küçülmenin bu noktasında ada büyüyüp yutmaya başlar
 private const val START_W_FRAC = 0.62f     // başlangıç genişliği (ekran genişliğine oranı); yükseklik ekran oranıyla gelir
 private const val START_TOP_FRAC = 0.30f   // başlangıçta panelin üst kenarı (ekran yüksekliğine oranı)
 private const val END_W_DP = 34f           // adaya girerken ince uzun şekil
