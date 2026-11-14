@@ -65,6 +65,9 @@ import kotlin.math.min
 
 const val MUSIC_EXTRA_DP = 100f
 
+/** Aktif aramada küçültülmüş adanın genişliği (telefon simgesi + süre + ses dalgası sığsın). */
+const val CALL_COMPACT_W_DP = 160f
+
 @Immutable
 data class Geo(val cw: Dp, val ch: Dp, val ew: Dp, val eh: Dp)
 
@@ -130,7 +133,7 @@ fun IslandRoot(
     val media = content as? IslandContent.Media
     // Açılırken animasyonu çok kısa geciktir: pencere önce büyüsün, animasyonun ilk (en hızlı) kareleri
     // küçük pencereye çizilip kırpılmasın ("yaylı" animasyonda açılışta takılma). Kapanış gecikmesizdir.
-    val wantExpanded = s.expanded || content is IslandContent.Call   // arama varken ada her zaman açık
+    val wantExpanded = s.expanded   // arama: açık/küçük durumunu servis belirler (gelen arama hep açık)
     var animExpanded by remember { mutableStateOf(wantExpanded) }
     LaunchedEffect(wantExpanded) {
         if (wantExpanded && cfg.animEnabled) delay(EXPAND_LEAD_MS)
@@ -154,7 +157,7 @@ fun IslandRoot(
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)
-            if (content is IslandContent.Call) geo = geo.copy(eh = if (content.isIncoming) 74.dp else 88.dp)
+            if (content is IslandContent.Call) geo = geo.copy(cw = maxOf(cw, CALL_COMPACT_W_DP.dp), eh = if (content.isIncoming) 74.dp else 88.dp)
             if (content is IslandContent.Status && content.kind == StatusKind.Charging) {
                 geo = geo.copy(ew = CHARGE_PILL_W_DP.dp, eh = chargePillHeightDp(cfg).dp)
             }
@@ -469,6 +472,26 @@ fun IslandPill(
             }
         }
 
+        if (content is IslandContent.Call && !content.isIncoming && compactVisible) {
+            // Küçültülmüş aktif arama: solda yeşil telefon + süre, sağda renkli ses dalgası
+            Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
+                val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
+                Row(
+                    Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp).then(fade),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    PhoneIcon(0f, Modifier.size(15.dp), CallGreen)
+                    Spacer(Modifier.width(5.dp))
+                    Text(
+                        content.duration ?: "0:00", color = CallGreen, fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp, maxLines = 1,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    CallWave(Modifier.width(42.dp).height((geo.ch - 12.dp).coerceAtLeast(10.dp)))
+                }
+            }
+        }
+
         if (content is IslandContent.Media && compactVisible) {
             // Sabit (kapalı ada) genişliğinde kutu: ada küçülürken kapak ve equalizer kenarlarla birlikte kaymaz
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
@@ -749,7 +772,7 @@ private val CallRed = Color(0xFFFF3B30)
 
 /** Telefon ahizesi simgesi. [rotation] 135 verilirse "kapat" simgesi olur. */
 @Composable
-private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier) {
+private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier, tint: Color = Color.White) {
     Canvas(modifier) {
         val sc = size.width / 24f
         withTransform({
@@ -757,8 +780,8 @@ private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier) {
             scale(sc, sc, Offset.Zero)
         }) {
             // Dolgu + aynı renkte yuvarlak kontur: ahize kalınlaşır
-            drawPath(PhonePath, Color.White)
-            drawPath(PhonePath, Color.White, style = Stroke(width = PHONE_THICKEN, join = StrokeJoin.Round, cap = StrokeCap.Round))
+            drawPath(PhonePath, tint)
+            drawPath(PhonePath, tint, style = Stroke(width = PHONE_THICKEN, join = StrokeJoin.Round, cap = StrokeCap.Round))
         }
     }
 }
@@ -802,6 +825,35 @@ private fun SpeakerIcon(on: Boolean, tint: Color, modifier: Modifier = Modifier)
             val st = Stroke(width = 2f, cap = StrokeCap.Round)
             drawArc(tint, -45f, 90f, false, Offset(8.5f, 7.5f), Size(9f, 9f), style = st)
             if (on) drawArc(tint, -50f, 100f, false, Offset(5f, 3.5f), Size(16f, 17f), style = st)
+        }
+    }
+}
+
+/** Küçük adadaki ses dalgası: yeşil -> beyaz -> turuncu renk geçişli, hareketli çubuklar. */
+@Composable
+private fun CallWave(modifier: Modifier = Modifier) {
+    val tr = androidx.compose.animation.core.rememberInfiniteTransition(label = "wave")
+    val phase by tr.animateFloat(
+        0f, (2 * Math.PI).toFloat(),
+        androidx.compose.animation.core.infiniteRepeatable(
+            tween(1500, easing = androidx.compose.animation.core.LinearEasing),
+        ),
+        label = "wavePhase",
+    )
+    val green = Color(0xFF4CE06A); val orange = Color(0xFFFF9248)
+    Canvas(modifier) {
+        val n = 9
+        val gap = size.width / n
+        val bw = gap * 0.52f
+        for (i in 0 until n) {
+            val t = i / (n - 1f)
+            val env = 1f - kotlin.math.abs(t - 0.5f) * 1.1f                          // ortada yüksek, kenarda alçak
+            val v = 0.30f + 0.70f * kotlin.math.abs(kotlin.math.sin(phase + i * 0.85f))
+            val h = (size.height * env * v).coerceAtLeast(bw)
+            val color = if (t < 0.5f) androidx.compose.ui.graphics.lerp(green, Color.White, t * 2f)
+                        else androidx.compose.ui.graphics.lerp(Color.White, orange, (t - 0.5f) * 2f)
+            val x = gap * i + gap / 2f
+            drawLine(color, Offset(x, (size.height - h) / 2f), Offset(x, (size.height + h) / 2f), strokeWidth = bw, cap = StrokeCap.Round)
         }
     }
 }

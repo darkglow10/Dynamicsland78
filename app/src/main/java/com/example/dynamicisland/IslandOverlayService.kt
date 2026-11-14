@@ -289,7 +289,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 if (s.favoritesReady() && s.favoritesTrigger == 0) openFavorites()
             }
             IslandContent.Assistant -> Unit
-            is IslandContent.Call -> Unit      // düğmeler kendi dokunuşunu işler
+            is IslandContent.Call -> {
+                // Gelen arama hep açık (düğmeler kendi dokunuşunu işler). Aktif aramada dokununca aç / küçült.
+                if (!callIncoming) {
+                    if (callExpanded) { callExpanded = false; callCollapseJob?.cancel(); publishCall() }
+                    else { callExpanded = true; publishCall(); scheduleCallCollapse() }
+                }
+            }
             is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
         }
     }
@@ -305,10 +311,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private var callTickJob: Job? = null
     private var callEndJob: Job? = null
     private var callSpeaker = false
+    private var callExpanded = true
+    private var callCollapseJob: Job? = null
 
     private fun onCall(e: IslandEvent.Call) {
         callEndJob?.cancel()
         collapseJob?.cancel()
+        val justAnswered = !e.incoming && (callKey == null || callIncoming)   // yeni aktif arama / az önce cevaplandı
         callKey = e.key
         callName = e.name
         callAvatar = e.avatar
@@ -318,17 +327,19 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         callTickJob?.cancel()
         if (e.incoming) {
             callSince = 0L
+            callExpanded = true; callCollapseJob?.cancel()      // gelen arama hep açık
         } else {
             val now = System.currentTimeMillis()
             if (callSince == 0L) callSince = e.startedAt.takeIf { it in 1..now } ?: now
             callTickJob = scope.launch { while (true) { delay(1_000); publishCall() } }
         }
+        if (justAnswered) { callExpanded = false; callCollapseJob?.cancel() }   // cevaplanınca küçük ada
         publishCall()
     }
 
     private fun publishCall() {
         val dur = if (callIncoming) null else formatCallDuration(System.currentTimeMillis() - callSince)
-        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = true) }
+        update { IslandUiState(IslandContent.Call(callName, callIncoming, dur, callAvatar, callSpeaker), expanded = callExpanded) }
     }
 
     private fun formatCallDuration(ms: Long): String {
@@ -347,6 +358,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             callTickJob?.cancel()
             callKey = null; callSince = 0L; callAnswer = null; callDecline = null; callAvatar = null
             setSpeaker(false)
+            callExpanded = true; callCollapseJob?.cancel()
             if (ui.value.content is IslandContent.Call) collapseAndRest()
         }
     }
@@ -392,6 +404,16 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun onCallSpeaker() {
         setSpeaker(!callSpeaker)
         publishCall()
+        if (callExpanded) scheduleCallCollapse()   // düğmeyle uğraşırken küçülmesin
+    }
+
+    /** Açılmış aktif arama ekranı bir süre sonra kendiliğinden küçülür. */
+    private fun scheduleCallCollapse(holdMs: Long = CALL_AUTO_COLLAPSE_MS) {
+        callCollapseJob?.cancel()
+        callCollapseJob = scope.launch {
+            delay(holdMs)
+            if (callKey != null && !callIncoming) { callExpanded = false; publishCall() }
+        }
     }
 
     private fun onCallDecline() {
@@ -923,7 +945,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private suspend fun syncWindow(k: WinKey) {
         val s = k.s
         val pad = dp(s.windowPadDp())                    // parıltı / zıplama taşması için pay
-        val cw = dp(compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
+        val cw = dp(if (k.kind == 6) maxOf(CALL_COMPACT_W_DP, s.compactWidthDp) else compactWidthFor(s, k.lyr && k.kind == 2)); val ch = dp(s.compactHeightDp)
         val music = k.kind == 2
         val assistant = k.kind == 3
         val ew = dp(
@@ -1144,6 +1166,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
 /** Ana Sayfa > Dene bölümündeki sahte arama olayının anahtarı. */
 const val DEMO_CALL_KEY = "demo_call"
+
+/** Dokunup açılan aktif arama ekranının kendiliğinden küçülme süresi (ms). */
+const val CALL_AUTO_COLLAPSE_MS = 5_000L
 
 /** Durum çubuğu örtüsü (bulanık mod): arka plan bulanıklığı (px) ve koyu ton (0..255). */
 private const val COVER_BLUR_PX = 120
