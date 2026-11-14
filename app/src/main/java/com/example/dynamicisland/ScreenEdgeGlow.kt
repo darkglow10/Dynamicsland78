@@ -86,7 +86,7 @@ fun ScreenEdgeGlow(active: StateFlow<Boolean>, cornerPx: Float) {
         if (on) {
             reveal.snapTo(0f)
             fade.snapTo(1f)
-            reveal.animateTo(1f, tween(1250, easing = CubicBezierEasing(0.35f, 0f, 0.15f, 1f)))
+            reveal.animateTo(1f, tween(1250, easing = CubicBezierEasing(0.12f, 0.5f, 0.2f, 1f)))
         } else {
             fade.animateTo(0f, tween(450))
         }
@@ -231,7 +231,7 @@ private fun EdgeGlowLayer(
             val wx = w; val wy = h / 2f
             val dMax = hypot(w, h / 2f)
             val soft = dMax * 0.30f
-            val r0 = soft * 0.25f
+            val r0 = soft * 0.45f
             val r = r0 + (dMax + soft * 1.05f - r0) * p
             val inner = max((r - soft) / r, 0f)
             fun f(s: Float) = inner + (1f - inner) * s
@@ -251,7 +251,7 @@ private fun EdgeGlowLayer(
 
             // 3) Renk dalgası: sağ kenardan çıkıp TÜM ekranı kaplayarak sola doğru geçen geniş, renkli, yumuşak bir bant.
             //    Cephede turuncu/pembe, arkasında mor/mavi akar; bant geçtikten sonra yalnızca kenar parlaması kalır.
-            val wave = 0.62f * (1f - p * p) * (if (p < 0.06f) p / 0.06f else 1f)
+            val wave = 0.62f * (1f - p * p) * (if (p < 0.025f) p / 0.025f else 1f)
             if (wave > 0.01f) {
                 val rr = r + soft * 0.1f
                 val band = soft * 1.9f
