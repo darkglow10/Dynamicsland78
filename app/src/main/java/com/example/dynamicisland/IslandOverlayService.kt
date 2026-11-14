@@ -167,7 +167,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 val wasMusic = inMusicApp
                 updateInMusicApp(e.to)          // önce "müzik uygulamasında mıyım" güncellenir
                 val started = onAppSwitched(e.from)   // çıkış animasyonu varsa ada yutma durumuna geçer (gizleme atlanır)
-                exitHold = started && settings.value.hideInMusicApp && wasMusic
+                if (started) exitHold = settings.value.hideInMusicApp && wasMusic   // panel sürerken gelen ikinci olay gizlemeyi bozmasın
                 refreshMediaVisibility()        // animasyon başlamadıysa müzik göster / gizle
             }
             is IslandEvent.Call -> onCall(e)

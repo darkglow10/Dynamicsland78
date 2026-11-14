@@ -100,7 +100,7 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
 
 // ---- Müzik uygulamasından çıkış: uzun (telefon oranlı) panel adaya küçülür
 private const val SHRINK_BASE_MS = 320     // hız 1x iken küçülme süresi
-private const val SHRINK_FADE_MS = 120     // adaya varınca silinmesi
+private const val SHRINK_FADE_MS = 70      // adaya varınca silinmesi
 private const val SHRINK_APPEAR_MS = 20    // yumuşakça belirme (ani kararma olmasın)
 private const val PANEL_DELAY_MS = 20L     // ada açıldıktan sonra panelin başlama gecikmesi (hız 1x)
 private const val SWALLOW_AT = 0.10f       // küçülmenin bu noktasında ada büyüyüp yutmaya başlar
@@ -150,9 +150,9 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val h0 = w0 * (size.height / size.width)
         val top0 = size.height * START_TOP_FRAC
         val cx0 = size.width / 2f
-        val w1 = END_W_DP * d
-        val h1 = END_H_DP * d
-        val top1 = spec.top + spec.h * 0.45f
+        val w1 = spec.w                                // adanın tam boyutu: panel adanın içine girip kaybolur,
+        val h1 = spec.h                                // altından taşan ince bir şekil kalmaz
+        val top1 = spec.top
         val cx1 = spec.cx
         val w = w0 * (w1 / w0).pow(t)                  // üstel daralma
         val h = h0 * (h1 / h0).pow(t)

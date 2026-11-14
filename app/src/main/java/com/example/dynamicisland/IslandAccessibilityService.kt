@@ -120,7 +120,17 @@ class IslandAccessibilityService : AccessibilityService() {
         getSystemService(InputMethodManager::class.java).enabledInputMethodList.map { it.packageName }.toSet()
     }.getOrDefault(emptySet())
 
-    private val fgCheck = Runnable { runCatching { checkForeground() } }
+    private var fgRetries = 0
+    private val fgCheck = object : Runnable {
+        override fun run() {
+            val changed = runCatching { checkForeground() }.getOrDefault(true)
+            // Hızlı geçişte aktif pencere henüz güncellenmemiş olabilir: değişiklik görülmediyse kısa aralıkla tekrar bak
+            if (!changed && fgRetries > 0) {
+                fgRetries--
+                handler.postDelayed(this, 90)
+            }
+        }
+    }
 
     /**
      * Olay sırası güvenilmez (launcher uygulama açılırken de geç olay üretebilir). Bu yüzden olay gelince kısa
@@ -128,6 +138,7 @@ class IslandAccessibilityService : AccessibilityService() {
      */
     private fun trackForeground() {
         handler.removeCallbacks(fgCheck)
+        fgRetries = 5
         handler.postDelayed(fgCheck, 15)
     }
 
@@ -139,14 +150,16 @@ class IslandAccessibilityService : AccessibilityService() {
         return fromWindows ?: runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
     }
 
-    private fun checkForeground() {
-        val cur = activePkg() ?: return
-        if (isTransientPkg(cur)) return
+    /** true: ön plan değişti (ya da bakılacak bir şey kalmadı); false: henüz değişiklik görülmedi. */
+    private fun checkForeground(): Boolean {
+        val cur = activePkg() ?: return false
+        if (isTransientPkg(cur)) return false
         val old = fgPkg
-        if (old == cur) return
+        if (old == cur) return false
         fgPkg = cur
         currentFg = cur
         if (old != null) IslandBus.post(IslandEvent.AppSwitched(old, cur))
+        return true
     }
 
     /**
