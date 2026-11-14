@@ -123,16 +123,20 @@ fun AssistantOrb(fullWidth: Boolean = false) {
         for (i in 0..STEPS) {
             val u = i / STEPS.toFloat()
             val env = sin(pi * u).coerceAtLeast(0f).pow(0.7f)
-            // Uçlar (sol/sağ kenar) sabit kalsın: eğim ortadan uçlara doğru sönümlenir
-            val tilt = (u - 0.5f) * h * 0.18f * sin(tau * p + 0.4f) * env
+            // Hareket zarfı: kenarlara yaklaşırken çok daha hızlı sönümlenir, böylece sol/sağ uçlar ve
+            // onlara yakın bölge sabit kalır; dalgalanma ortada yoğunlaşır
+            val mv = sin(pi * u).coerceAtLeast(0f).pow(2.5f)
+            val tilt = (u - 0.5f) * h * 0.18f * sin(tau * p + 0.4f) * mv
             yc[i] = cy + tilt +
-                env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
-                env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
-            th[i] = h * 0.145f * b * (0.65f + 0.4f * sin(tau * (u * 1.7f + p))) * env
+                mv * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
+                mv * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
+            // Kalınlık da kenarlarda oynamasın: dalgalı kısım sadece ortada, uçlarda sabit
+            th[i] = h * 0.145f * (1f + (b - 1f) * mv) * (0.65f + 0.4f * sin(tau * (u * 1.7f + p)) * mv) * env
         }
         val cols = List(SAMPLES) { k ->
             val s = k / (SAMPLES - 1).toFloat()
-            val a = sin(pi * s).coerceAtLeast(0f).pow(0.5f)
+            // Uçlar tamamen kaybolmasın: sabit kenarlar adanın içinde belli olsun
+            val a = 0.3f + 0.7f * sin(pi * s).coerceAtLeast(0f).pow(0.5f)
             siriColor(s * 0.85f + hp, a)
         }
         val ribbon = Brush.horizontalGradient(cols, startX = x0, endX = x0 + span)
