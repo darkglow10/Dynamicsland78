@@ -150,9 +150,9 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
         val h0 = w0 * (size.height / size.width)
         val top0 = size.height * START_TOP_FRAC
         val cx0 = size.width / 2f
-        val w1 = spec.w                                // adanın tam boyutu: panel adanın içine girip kaybolur,
-        val h1 = spec.h                                // altından taşan ince bir şekil kalmaz
-        val top1 = spec.top
+        val w1 = spec.h * 0.5f                         // ince, uzun şekil (eski görünüm) ama adanın İÇİNDE biter:
+        val h1 = spec.h * 0.8f                         // adanın altından taşmaz
+        val top1 = spec.top + spec.h * 0.1f
         val cx1 = spec.cx
         val w = w0 * (w1 / w0).pow(t)                  // üstel daralma
         val h = h0 * (h1 / h0).pow(t)
