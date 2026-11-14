@@ -117,12 +117,32 @@ class IslandAccessibilityService : AccessibilityService() {
         getSystemService(InputMethodManager::class.java).enabledInputMethodList.map { it.packageName }.toSet()
     }.getOrDefault(emptySet())
 
-    private fun trackForeground(pkg: String) {
-        if (isTransientPkg(pkg)) return
+    private val fgCheck = Runnable { runCatching { checkForeground() } }
+
+    /**
+     * Olay sırası güvenilmez (launcher uygulama açılırken de geç olay üretebilir). Bu yüzden olay gelince kısa
+     * bir gecikmeyle GERÇEK aktif pencereye bakılır; yalnızca uygulama gerçekten değiştiyse olay yayınlanır.
+     */
+    private fun trackForeground() {
+        handler.removeCallbacks(fgCheck)
+        handler.postDelayed(fgCheck, 200)
+    }
+
+    private fun activePkg(): String? {
+        val fromWindows = runCatching {
+            windows.firstOrNull { it.isActive && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                ?.root?.packageName?.toString()
+        }.getOrNull()
+        return fromWindows ?: runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+    }
+
+    private fun checkForeground() {
+        val cur = activePkg() ?: return
+        if (isTransientPkg(cur)) return
         val old = fgPkg
-        if (old == pkg) return
-        fgPkg = pkg
-        if (old != null) IslandBus.post(IslandEvent.AppSwitched(old, pkg))
+        if (old == cur) return
+        fgPkg = cur
+        if (old != null) IslandBus.post(IslandEvent.AppSwitched(old, cur))
     }
 
     /**
@@ -175,7 +195,7 @@ class IslandAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
                     val pkg = e.packageName?.toString()
                     if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
-                        trackForeground(pkg)
+                        trackForeground()
                         if (isAssist(pkg)) {
                             evLog.addLast("$pkg ${e.className}")
                             while (evLog.size > 6) evLog.removeFirst()

@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.pow
 
 /**
@@ -97,27 +98,33 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
     }
 }
 
-// ---- Müzik uygulamasından çıkış: tam ekran panel adaya küçülür
-private const val SHRINK_BASE_MS = 460     // hız 1x iken tam ekrandan adaya küçülme süresi
+// ---- Müzik uygulamasından çıkış: panel adaya küçülür
+private const val SHRINK_BASE_MS = 460     // hız 1x iken küçülme süresi
 private const val SHRINK_FADE_MS = 140     // adaya varınca küçük şeklin silinmesi
+private const val SHRINK_APPEAR_MS = 120   // panelin yumuşakça belirmesi (ani kararma olmasın)
 private const val SWALLOW_AT = 0.8f        // küçülmenin bu noktasında ada şarkıyı yutmaya başlar
+private const val START_W_FRAC = 0.58f     // panelin başlangıç genişliği (ekran genişliğine oranı)
+private const val START_H_FRAC = 0.46f     // ... yüksekliği (ekran yüksekliğine oranı)
+private const val START_CY_FRAC = 0.56f    // ... ve dikey merkezi
 
 private val ShrinkEasing = CubicBezierEasing(0.4f, 0f, 0.6f, 1f)
 
 /**
- * Tam ekran siyah panel (uygulamanın ekranı yerine) adaya doğru küçülür. [onSwallow]: panel adaya
- * yaklaşınca çağrılır (ada o an açılıp şarkıyı gösterir). Bitince [onFinished] gelir.
+ * Ekranın ortasından belirip adaya doğru küçülen siyah panel (tam ekranı kaplamaz).
+ * [onSwallow]: panel adaya yaklaşınca çağrılır (ada o an açılıp şarkıyı gösterir). Bitince [onFinished] gelir.
  */
 @Composable
 fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit) {
     val swallow by rememberUpdatedState(onSwallow)
     val finished by rememberUpdatedState(onFinished)
-    val a = remember { Animatable(0f) }            // 0 = tam ekran, 1 = adanın altında küçük şekil
+    val a = remember { Animatable(0f) }            // 0 = başlangıç kartı, 1 = adanın altında küçük şekil
+    val appear = remember { Animatable(0f) }
     val fade = remember { Animatable(1f) }
     var origin by remember { mutableStateOf(Offset.Zero) }
     val ms = (SHRINK_BASE_MS / spec.speed.coerceIn(0.25f, 4f)).toInt()
 
     LaunchedEffect(Unit) {
+        launch { appear.animateTo(1f, tween(SHRINK_APPEAR_MS)) }
         var fired = false
         a.animateTo(1f, tween(ms, easing = ShrinkEasing)) {
             if (!fired && value >= SWALLOW_AT) { fired = true; swallow() }
@@ -130,30 +137,28 @@ fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Un
     Canvas(
         Modifier.fillMaxSize()
             .onGloballyPositioned { origin = it.positionOnScreen() }
-            .graphicsLayer { alpha = fade.value }
+            .graphicsLayer { alpha = appear.value * fade.value }
     ) {
         val d = density
-        val m = MARGIN_DP * d
-        val sw = size.width + 2 * m
-        val sh = size.height + 2 * m
         val t = a.value
 
+        // Başlangıç: ekranın ortasında kart; bitiş: adanın alt kenarında küçük şekil
+        val w0 = size.width * START_W_FRAC
+        val h0 = size.height * START_H_FRAC
+        val cx0 = size.width / 2f
+        val cy0 = size.height * START_CY_FRAC
         val w1 = START_W_DP * d
         val h1 = START_H_DP * d
         val cx1 = spec.cx
         val cy1 = spec.top + spec.h + h1 * 0.15f
-        val w = sw * (w1 / sw).pow(t)                  // üstel küçülme: açılışın tersi
-        val h = sh * (h1 / sh).pow(t)
-        val cx = size.width / 2f + (cx1 - size.width / 2f) * t
-        val cy = size.height / 2f + (cy1 - size.height / 2f) * t
+        val w = w0 * (w1 / w0).pow(t)                  // üstel küçülme
+        val h = h0 * (h1 / h0).pow(t)
+        val cx = cx0 + (cx1 - cx0) * t
+        val cy = cy0 + (cy1 - cy0) * t
         val radius = minOf(CORNER_DP * d, minOf(w, h) / 2f)
 
         translate(-origin.x, -origin.y) {
-            if (t < 0.02f) {
-                drawRect(Color.Black, Offset(-m, -m), Size(sw, sh))
-            } else {
-                drawRoundRect(Color.Black, Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
-            }
+            drawRoundRect(Color.Black, Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
         }
     }
 }

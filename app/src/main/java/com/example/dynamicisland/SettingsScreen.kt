@@ -334,11 +334,6 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
-            SectionCard("Müzikten çıkış", "Müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı yutup gösterir") {
-                SwitchRow("Müzikten çıkış animasyonu", "Müzik çalarken uygulamadan çıkınca çalışır. Hız, Favori uygulamalar bölümündeki açılış hızından alınır",
-                    draft.musicExitAnim) { draft = draft.copy(musicExitAnim = it) }
-            }
-
             IslandActionButton("Varsayılanlara dön", { CustomImages.releaseAll(ctx, draft); draft = IslandSettings(); version++ })
             Spacer(Modifier.height(28.dp))
         }
@@ -463,6 +458,13 @@ private fun LyricsSections(draft: IslandSettings, version: Int, set: (IslandSett
         if (draft.lyricsEnabled) {
             Text("Senkron söz yoksa düz sözler şarkı süresine yayılır. Aranırken \"Şarkı sözü aranıyor…\", bulunamazsa \"Şarkı sözü bulunamadı\" yazar.",
                 color = cs.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+        }
+    }
+    SectionCard("Müzikten çıkış", "Müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı yutup gösterir") {
+        SwitchRow("Müzikten çıkış animasyonu", "Müzik çalarken o uygulamadan çıkınca çalışır",
+            draft.musicExitAnim) { set(draft.copy(musicExitAnim = it)) }
+        if (draft.musicExitAnim) {
+            SliderRow("Hız", draft.musicExitSpeed, 0.5f..3f, "%.1fx".format(draft.musicExitSpeed)) { set(draft.copy(musicExitSpeed = it)) }
         }
     }
     if (!draft.lyricsEnabled) return
