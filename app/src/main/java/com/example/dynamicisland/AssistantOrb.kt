@@ -123,8 +123,8 @@ fun AssistantOrb(fullWidth: Boolean = false) {
         for (i in 0..STEPS) {
             val u = i / STEPS.toFloat()
             val env = sin(pi * u).coerceAtLeast(0f).pow(0.7f)
-            // Tam genişlikte uçlar (ekranın sol/sağ kenarı) sabit kalsın: eğim ortadan uçlara doğru sönümlenir
-            val tilt = (u - 0.5f) * h * 0.18f * sin(tau * p + 0.4f) * (if (fullWidth) env else 1f)
+            // Uçlar (sol/sağ kenar) sabit kalsın: eğim ortadan uçlara doğru sönümlenir
+            val tilt = (u - 0.5f) * h * 0.18f * sin(tau * p + 0.4f) * env
             yc[i] = cy + tilt +
                 env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
                 env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
