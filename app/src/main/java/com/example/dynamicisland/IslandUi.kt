@@ -174,8 +174,9 @@ fun IslandRoot(
         if (content !is IslandContent.Idle || cfg.showIdle) {
             val music = content is IslandContent.Media
             // Sözler görününce kapalı ada yumuşakça genişler / sözler bitince daralır
-            val cwSpec: AnimationSpec<Dp> = if (cfg.animEnabled) tween<Dp>(380, easing = FastOutSlowInEasing) else snap<Dp>()
-            val cw by animateDpAsState(compactWidthFor(cfg, s.compactLyrics && music).dp, cwSpec, label = "cw")
+            // Yutma efektinde ada, sözler açık olsa bile VARSAYILAN kapalı genişlikten büyür; efekt bitince ayara göre genişler
+            val cwSpec: AnimationSpec<Dp> = if (cfg.animEnabled) tween<Dp>(if (s.swallow) 140 else 380, easing = FastOutSlowInEasing) else snap<Dp>()
+            val cw by animateDpAsState(compactWidthFor(cfg, s.compactLyrics && music && !s.swallow).dp, cwSpec, label = "cw")
             var geo = islandGeo(cfg, music, s.compactLyrics).copy(cw = cw)
             if (content is IslandContent.Assistant) geo = geo.copy(ew = cfg.assistantWidthDp.dp, eh = cfg.assistantHeightDp.dp)
             if (content is IslandContent.Favorites) geo = geo.copy(eh = cfg.favoritesHeightDp(content.apps.size).dp)

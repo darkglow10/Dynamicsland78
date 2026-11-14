@@ -212,7 +212,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val s = settings.value
         val want = s.lyricsEnabled && s.lyricsCompact && lyrics.value is LyricsState.Ready &&
             lastMedia?.playing == true && n.content is IslandContent.Media
-        ui.value = n.copy(compactLyrics = want)
+        ui.value = n.copy(compactLyrics = want && !n.swallow)
     }
 
     private var assistantActive = false
@@ -643,7 +643,8 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Müzikten çıkış animasyonu
-    private val SWALLOW_HOLD_MS = 320L       // ada büyük kaldıktan sonra eski haline dönme süresi
+    private val SWALLOW_SAFE_MS = 1_500L      // güvenlik: panel bitmese de ada bu sürede küçülür
+    private val SWALLOW_HOLD_MS = 140L       // ada büyük kaldıktan sonra eski haline dönme süresi
     private var swallowView: ComposeView? = null
     private var swallowWm: WindowManager? = null
 
@@ -674,13 +675,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val m = lastMedia ?: return
         val c = ui.value.content
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
-        if (ui.value.swallow && ui.value.expanded) {   // zaten yutma halinde: pencereyi yeniden kurma (kayma olmasın)
-            scheduleCollapse(SWALLOW_HOLD_MS)
-            return
-        }
+        if (ui.value.swallow && ui.value.expanded) return   // zaten yutma halinde: pencereyi yeniden kurma (kayma olmasın)
         collapseJob?.cancel()
         update { IslandUiState(m, expanded = true, swallow = true) }
-        scheduleCollapse(SWALLOW_HOLD_MS)
+        scheduleCollapse(SWALLOW_SAFE_MS)
     }
 
     private fun startSwallowTransition() {
@@ -703,7 +701,13 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 ShrinkToIsland(
                     spec,
                     onSwallow = { runCatching { swallowIsland() } },
-                    onFinished = { handler.post { if (swallowView === view) removeSwallowView() } },
+                    onFinished = {
+                        handler.post {
+                            if (swallowView === view) removeSwallowView()
+                            // Panel tamamen silindi: ada bir an daha büyük kalıp küçülür (arkası görünmesin)
+                            if (ui.value.swallow && ui.value.expanded) scheduleCollapse(SWALLOW_HOLD_MS)
+                        }
+                    },
                 )
             }
         }
@@ -1247,7 +1251,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             k.kind == 0 -> { setBlur(false, s); setGeometry(1, 1, baseX, y) }
             k.expanded && k.swallow && music -> {
                 // Yutma efekti: pencere, büyüyen adanın boyutunda (tam açık panel kadar büyük değil)
-                val sz = swallowSizeDp(compactWidthFor(s, k.lyr), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
+                val sz = swallowSizeDp(compactWidthFor(s, false), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
                 setBlur(false, s)
                 val sw2 = dp(sz.first) + 2 * pad
                 val maxSh = ((screenW - sw2) / 2).coerceAtLeast(0)
