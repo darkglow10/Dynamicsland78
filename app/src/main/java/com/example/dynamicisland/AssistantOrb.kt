@@ -76,6 +76,10 @@ private fun siriColor(t: Float, alpha: Float = 1f): Color {
 private const val STEPS = 48
 private const val SAMPLES = 9
 
+// Uçların sabit kalacağı bölge: merkezden uzaklık (0 = orta, 1 = uç). START'a kadar tam dalga, END'den sonra tamamen sabit.
+private const val WAVE_FIXED_START = 0.35f
+private const val WAVE_FIXED_END = 0.75f
+
 /**
  * Siri / Gemini benzeri asistan animasyonu. Çizginin KENDİSİ animasyondur: ortada kalın, dalgalı,
  * uçlara doğru sivrilen bir bant; rengi (mavi/mor/kırmızı/turuncu/sarı/beyaz/cyan) boyunca akar ve
@@ -122,11 +126,18 @@ fun AssistantOrb() {
         for (i in 0..STEPS) {
             val u = i / STEPS.toFloat()
             val env = sin(pi * u).coerceAtLeast(0f).pow(0.7f)
+            // Uçlar sabit, dalga yalnızca ortada: merkezden uzaklaştıkça dalga ağırlığı 0'a iner
+            val d = kotlin.math.abs(u - 0.5f) * 2f
+            val q = ((d - WAVE_FIXED_START) / (WAVE_FIXED_END - WAVE_FIXED_START)).coerceIn(0f, 1f)
+            val ww = 1f - q * q * (3f - 2f * q)
             val tilt = (u - 0.5f) * h * 0.18f * sin(tau * p + 0.4f)
-            yc[i] = cy + tilt +
-                env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
-                env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
-            th[i] = h * 0.145f * b * (0.65f + 0.4f * sin(tau * (u * 1.7f + p))) * env
+            yc[i] = cy + ww * (
+                tilt +
+                    env * h * 0.055f * b * sin(tau * (u * 1.25f - p)) +
+                    env * h * 0.025f * sin(tau * (u * 2.6f + p * 2f))
+                )
+            val dynThick = b * (0.65f + 0.4f * sin(tau * (u * 1.7f + p)))
+            th[i] = h * 0.145f * env * (0.65f + (dynThick - 0.65f) * ww)
         }
         val cols = List(SAMPLES) { k ->
             val s = k / (SAMPLES - 1).toFloat()
