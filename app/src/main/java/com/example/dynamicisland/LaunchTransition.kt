@@ -101,8 +101,8 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
 // ---- Müzik uygulamasından çıkış: uzun (telefon oranlı) panel adaya küçülür
 private const val SHRINK_BASE_MS = 320     // hız 1x iken küçülme süresi
 private const val SHRINK_FADE_MS = 120     // adaya varınca silinmesi
-private const val SHRINK_APPEAR_MS = 40    // yumuşakça belirme (ani kararma olmasın)
-private const val PANEL_DELAY_MS = 110L     // ada açıldıktan sonra panelin başlama gecikmesi (hız 1x)
+private const val SHRINK_APPEAR_MS = 20    // yumuşakça belirme (ani kararma olmasın)
+private const val PANEL_DELAY_MS = 20L     // ada açıldıktan sonra panelin başlama gecikmesi (hız 1x)
 private const val SWALLOW_AT = 0.10f       // küçülmenin bu noktasında ada büyüyüp yutmaya başlar
 private const val START_W_FRAC = 0.62f     // başlangıç genişliği (ekran genişliğine oranı); yükseklik ekran oranıyla gelir
 private const val START_TOP_FRAC = 0.30f   // başlangıçta panelin üst kenarı (ekran yüksekliğine oranı)
