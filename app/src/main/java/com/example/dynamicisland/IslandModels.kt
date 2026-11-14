@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 @Immutable
 data class FavApp(val pkg: String, val label: String, val icon: ImageBitmap?)
 
+enum class StatusKind { Ringer, Charging, Timer, Alarm }
+
 @Immutable
 sealed interface IslandContent {
     data object Idle : IslandContent
@@ -33,6 +35,18 @@ sealed interface IslandContent {
         val isIncoming: Boolean,
         val duration: String? = null,     // aktif aramada "0:01"
         val avatar: ImageBitmap? = null,
+    ) : IslandContent
+
+    /** Kısa durum bildirimi: zil modu, şarj, zamanlayıcı, alarm. */
+    data class Status(
+        val kind: StatusKind,
+        val title: String,
+        val subtitle: String = "",
+        val value: String = "",          // sağ taraftaki büyük yazı (\"%78\", \"07:30\" ...)
+        val progress: Float = 0f,        // şarj seviyesi (0..1)
+        val endsAt: Long = 0L,           // zamanlayıcı: bitiş zamanı (System.currentTimeMillis)
+        val totalMs: Long = 0L,          // zamanlayıcı: toplam süre
+        val silent: Boolean = false,     // zil modu: sessiz mi
     ) : IslandContent
 
     data class Media(
@@ -87,6 +101,8 @@ sealed interface IslandEvent {
         val answer: android.app.PendingIntent?, val decline: android.app.PendingIntent?,
     ) : IslandEvent
     data class CallEnded(val key: String) : IslandEvent
+    /** Zil modu / şarj / zamanlayıcı / alarm gibi kısa durum gösterimi. */
+    data class Status(val content: IslandContent.Status, val holdMs: Long = 4_000L) : IslandEvent
     data class MediaChanged(val media: IslandContent.Media?) : IslandEvent
     data class AssistantChanged(val active: Boolean) : IslandEvent
 }

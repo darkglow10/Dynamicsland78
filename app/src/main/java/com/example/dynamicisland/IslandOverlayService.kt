@@ -146,6 +146,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         IslandContent.Assistant -> 3
         is IslandContent.Favorites -> 4
         is IslandContent.Call -> if (c.isIncoming) 5 else 6
+        is IslandContent.Status -> 7
     }
 
     // ---------------------------------------------------------------- Olay mantığı
@@ -154,6 +155,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
             is IslandEvent.Call -> onCall(e)
             is IslandEvent.CallEnded -> onCallEnded(e.key)
+            is IslandEvent.Status -> if (!assistantActive && callKey == null) showTemporarily(e.content, e.holdMs)
             is IslandEvent.Notification -> if (!assistantActive && callKey == null) scope.launch {
                 val icon = iconFor(e.pkg)
                 showTemporarily(IslandContent.Notif(e.pkg, e.title, e.text, icon, e.intent), holdMs = 4_000)
@@ -197,6 +199,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             cur.content is IslandContent.Call -> update { it }          // arama sürerken müzik paneline geçme
             cur.content is IslandContent.Assistant -> update { it }
             cur.content is IslandContent.Notif -> update { it }
+            cur.content is IslandContent.Status -> update { it }
             cur.content is IslandContent.Favorites -> update { it }    // favori paneli açıkken müzik paneline geçme
             m == null || (!m.playing && !cur.expanded) -> { collapseJob?.cancel(); rest() }
             else -> update { it.copy(content = m) }
@@ -280,6 +283,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
             }
             IslandContent.Assistant -> Unit
             is IslandContent.Call -> Unit      // düğmeler kendi dokunuşunu işler
+            is IslandContent.Status -> { collapseJob?.cancel(); collapseJob = scope.launch { collapseAndRest() } }
         }
     }
 

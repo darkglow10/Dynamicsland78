@@ -453,6 +453,7 @@ fun IslandPill(
                 when (content) {
                     is IslandContent.Notif -> NotifContent(content, accent, rb)
                     is IslandContent.Call -> CallContent(content, accent, rb, onAnswer, onDecline)
+                    is IslandContent.Status -> StatusContent(content, rb)
                     is IslandContent.Media -> MusicPanel(content, eqColor, cfg, lyrics, frame, onCommand, onOutput, customArt)
                     IslandContent.Assistant -> AssistantOrb()
                     is IslandContent.Favorites -> FavoritesPanel(content, cfg.compactHeightDp.dp, onLaunch)
@@ -592,6 +593,105 @@ private fun NotifContent(c: IslandContent.Notif, accent: Color, rb: RainbowStyle
                 Text(c.text, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp, lineHeight = 18.sp,
                     maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------- Durum (zil modu / şarj / zamanlayıcı / alarm)
+private const val BELL_PATH =
+    "M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5" +
+    "s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z"
+private val BellPath: Path by lazy { PathParser().parsePathString(BELL_PATH).toPath() }
+
+private fun statusColor(c: IslandContent.Status): Color = when (c.kind) {
+    StatusKind.Ringer -> if (c.silent) Color(0xFFFF3B30) else Color(0xFFFF9500)
+    StatusKind.Charging -> Color(0xFF34C759)
+    StatusKind.Timer -> Color(0xFF0A84FF)
+    StatusKind.Alarm -> Color(0xFFFF9500)
+}
+
+@Composable
+private fun StatusIcon(c: IslandContent.Status, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val sc = size.width / 24f
+        withTransform({ scale(sc, sc, Offset.Zero) }) {
+            val w = Color.White
+            val st = Stroke(width = 2f, cap = StrokeCap.Round)
+            when (c.kind) {
+                StatusKind.Ringer -> {
+                    drawPath(BellPath, w)
+                    if (c.silent) drawLine(w, Offset(3.5f, 3.5f), Offset(20.5f, 20.5f), strokeWidth = 2.4f, cap = StrokeCap.Round)
+                }
+                StatusKind.Charging -> {
+                    val bolt = Path().apply {
+                        moveTo(13.5f, 2f); lineTo(5f, 13.5f); lineTo(11f, 13.5f)
+                        lineTo(10f, 22f); lineTo(19f, 9.5f); lineTo(13f, 9.5f); close()
+                    }
+                    drawPath(bolt, w)
+                }
+                StatusKind.Timer -> {
+                    drawCircle(w, radius = 8f, center = Offset(12f, 13.5f), style = st)
+                    drawLine(w, Offset(12f, 13.5f), Offset(12f, 9f), strokeWidth = 2f, cap = StrokeCap.Round)
+                    drawLine(w, Offset(9.5f, 2.5f), Offset(14.5f, 2.5f), strokeWidth = 2f, cap = StrokeCap.Round)
+                }
+                StatusKind.Alarm -> {
+                    drawCircle(w, radius = 7.5f, center = Offset(12f, 13f), style = st)
+                    drawLine(w, Offset(12f, 13f), Offset(12f, 9.2f), strokeWidth = 2f, cap = StrokeCap.Round)
+                    drawLine(w, Offset(12f, 13f), Offset(14.6f, 14.6f), strokeWidth = 2f, cap = StrokeCap.Round)
+                    drawCircle(w, radius = 2.4f, center = Offset(4.6f, 4.8f))
+                    drawCircle(w, radius = 2.4f, center = Offset(19.4f, 4.8f))
+                }
+            }
+        }
+    }
+}
+
+private fun formatRemaining(ms: Long): String {
+    val t = ((ms + 999) / 1000).coerceAtLeast(0)
+    val h = t / 3600; val m = (t % 3600) / 60; val s = t % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+@Composable
+private fun StatusContent(c: IslandContent.Status, rb: RainbowStyle?) {
+    val color = statusColor(c)
+    val timer = c.kind == StatusKind.Timer && c.endsAt > 0L
+    var now by remember(c.endsAt) { mutableLongStateOf(System.currentTimeMillis()) }
+    if (timer) LaunchedEffect(c.endsAt) {
+        while (true) { now = System.currentTimeMillis(); delay(200) }
+    }
+    val remaining = if (timer) (c.endsAt - now).coerceAtLeast(0L) else 0L
+    val value = if (timer) formatRemaining(remaining) else c.value
+    val frac = when {
+        timer && c.totalMs > 0L -> remaining.toFloat() / c.totalMs
+        c.kind == StatusKind.Charging -> c.progress
+        else -> -1f
+    }.let { if (it >= 0f) it.coerceIn(0f, 1f) else it }
+
+    Row(
+        Modifier.fillMaxSize().padding(horizontal = 18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(Modifier.size(46.dp).background(color, RoundedCornerShape(15.dp)), contentAlignment = Alignment.Center) {
+            StatusIcon(c, Modifier.size(26.dp))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(c.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.5.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+            if (c.subtitle.isNotBlank()) {
+                Text(c.subtitle, color = Color.White.copy(alpha = 0.70f), fontSize = 13.5.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.rainbowFill(rb))
+            }
+            if (frac >= 0f) {
+                Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(Color.White.copy(alpha = 0.16f))) {
+                    Box(Modifier.fillMaxWidth(frac).fillMaxHeight().background(color, RoundedCornerShape(2.dp)))
+                }
+            }
+        }
+        if (value.isNotBlank()) {
+            Text(value, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp,
+                maxLines = 1, modifier = Modifier.rainbowFill(rb))
         }
     }
 }
