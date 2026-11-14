@@ -107,6 +107,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (!runCatching { startAsForeground() }.isSuccess) { stopSelf(); return }
         runCatching { detectCutout() }
         runCatching { attachStatusCover() }      // ada penceresinden ÖNCE eklenir: ada her zaman üstte kalır
+        runCatching { attachEdgeGlow() }         // kenar parlaması da adadan ÖNCE eklenir (ada üstte kalır)
         safeAttachOverlay()
         // Erişilebilirlik servisi açılıp kapanınca pencere türünü yeniden seç
         IslandAccessibilityService.onChanged = { runCatching { reattach() } }
@@ -190,6 +191,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         if (active && !settings.value.assistantEnabled) return
         if (active && callKey != null) return          // arama sürerken asistan animasyonu araya girmesin
         assistantActive = active
+        glowActive.value = active                      // ekran kenarı parlaması: açılırken sağdan sola yayılır, kapanınca söner
         collapseJob?.cancel()
         if (active) {
             update { IslandUiState(IslandContent.Assistant, expanded = true) }
@@ -683,10 +685,12 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun reattach() {
         runCatching { detachOverlay() }
         runCatching { detachStatusCover() }
+        runCatching { detachEdgeGlow() }
         // Erişilebilirlik bağlantısı değişince dış söz penceresinin türü de değişir: yeniden kur.
         // Önce durum çubuğu örtüsü, sonra söz penceresi, en son ada eklenir; böylece ada her zaman üstte kalır ve sözler adanın "içinden" çıkar.
         runCatching { detachOutside() }
         runCatching { attachStatusCover() }
+        runCatching { attachEdgeGlow() }
         runCatching { syncOutside(settings.value) }
         safeAttachOverlay()
         scope.launch { syncWindow(WinKey(kindOf(ui.value.content), ui.value.expanded, ui.value.compactLyrics, settings.value)) }
@@ -786,6 +790,63 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { statusCoverDialog?.dismiss() }
         statusCoverDialog = null; statusCoverView = null
         coverT = 0f
+    }
+
+    // ---------------------------------------------------------------- Ekran kenarı parlaması (asistan)
+    private val glowActive = MutableStateFlow(false)
+    private var glowDialog: Dialog? = null
+    private var glowView: ComposeView? = null
+
+    /** Tam ekran, dokunmatik olmayan, şeffaf pencere: asistan açılınca kenarlarda renkli parlama çizer. */
+    private fun attachEdgeGlow() {
+        val a11y = IslandAccessibilityService.instance ?: return
+        val v = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@IslandOverlayService)
+            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
+            setContent { ScreenEdgeGlow(glowActive) }
+        }
+        val d = Dialog(ContextThemeWrapper(a11y, android.R.style.Theme_Translucent_NoTitleBar))
+        d.setCancelable(false)
+        d.setCanceledOnTouchOutside(false)
+        d.setContentView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        d.window?.apply {
+            setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            addFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            )
+            setGravity(Gravity.TOP or Gravity.START)
+            setDecorFitsSystemWindows(false)
+            decorView.setPadding(0, 0, 0, 0)
+            val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
+            lp.width = WindowManager.LayoutParams.MATCH_PARENT
+            lp.height = WindowManager.LayoutParams.MATCH_PARENT
+            lp.x = 0; lp.y = 0
+            lp.format = PixelFormat.TRANSLUCENT
+            lp.fitInsetsTypes = 0
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            attributes = lp
+        }
+        d.window?.decorView?.let { stripInsets(it) }
+        if (!runCatching { d.show() }.isSuccess) { v.disposeComposition(); return }
+        d.window?.decorView?.let { stripInsets(it) }
+        glowDialog = d; glowView = v
+    }
+
+    private fun detachEdgeGlow() {
+        glowView?.let { v ->
+            v.disposeComposition()
+            v.setViewTreeLifecycleOwner(null)
+            v.setViewTreeSavedStateRegistryOwner(null)
+        }
+        runCatching { glowDialog?.dismiss() }
+        glowDialog = null; glowView = null
     }
 
     private fun detachOverlay() {
@@ -1186,6 +1247,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         runCatching { sideCall.hide() }
         runCatching { removeLaunchView() }
         runCatching { detachStatusCover() }
+        runCatching { detachEdgeGlow() }
         detachOutside()
         collapseJob?.cancel()
         scope.cancel()

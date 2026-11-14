@@ -66,7 +66,7 @@ private val SIRI = arrayOf(
     Color(0xFFFF9500), Color(0xFFFFD60A), Color(0xFFFFFFFF), Color(0xFF64D2FF), Color(0xFF0A84FF),
 )
 
-private fun siriColor(t: Float, alpha: Float = 1f): Color {
+internal fun siriColor(t: Float, alpha: Float = 1f): Color {
     val n = SIRI.size - 1
     val x = (((t % 1f) + 1f) % 1f) * n
     val i = x.toInt().coerceIn(0, n - 1)
