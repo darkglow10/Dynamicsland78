@@ -106,6 +106,8 @@ sealed interface IslandEvent {
     data class Status(val content: IslandContent.Status, val holdMs: Long = 4_000L) : IslandEvent
     data class MediaChanged(val media: IslandContent.Media?) : IslandEvent
     data class AssistantChanged(val active: Boolean) : IslandEvent
+    /** Ön plandaki uygulama değişti ([from] -> [to]); müzik uygulamasından çıkış animasyonu için. */
+    data class AppSwitched(val from: String, val to: String) : IslandEvent
 }
 
 /** Arayüz -> NotificationListener (medya kontrolü) komutları. */

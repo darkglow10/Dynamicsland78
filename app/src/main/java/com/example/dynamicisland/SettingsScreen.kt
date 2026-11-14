@@ -334,6 +334,11 @@ private fun SettingsContent(init: IslandSettings, lyricsPage: Boolean, onSave: s
                 }
             }
 
+            SectionCard("Müzikten çıkış", "Müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı yutup gösterir") {
+                SwitchRow("Müzikten çıkış animasyonu", "Müzik çalarken uygulamadan çıkınca çalışır. Hız, Favori uygulamalar bölümündeki açılış hızından alınır",
+                    draft.musicExitAnim) { draft = draft.copy(musicExitAnim = it) }
+            }
+
             IslandActionButton("Varsayılanlara dön", { CustomImages.releaseAll(ctx, draft); draft = IslandSettings(); version++ })
             Spacer(Modifier.height(28.dp))
         }

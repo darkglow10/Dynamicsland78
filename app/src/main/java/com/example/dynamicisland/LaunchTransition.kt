@@ -96,3 +96,64 @@ fun LaunchTransition(spec: LaunchSpec, onCovered: () -> Unit, onFinished: () -> 
         }
     }
 }
+
+// ---- Müzik uygulamasından çıkış: tam ekran panel adaya küçülür
+private const val SHRINK_BASE_MS = 460     // hız 1x iken tam ekrandan adaya küçülme süresi
+private const val SHRINK_FADE_MS = 140     // adaya varınca küçük şeklin silinmesi
+private const val SWALLOW_AT = 0.8f        // küçülmenin bu noktasında ada şarkıyı yutmaya başlar
+
+private val ShrinkEasing = CubicBezierEasing(0.4f, 0f, 0.6f, 1f)
+
+/**
+ * Tam ekran siyah panel (uygulamanın ekranı yerine) adaya doğru küçülür. [onSwallow]: panel adaya
+ * yaklaşınca çağrılır (ada o an açılıp şarkıyı gösterir). Bitince [onFinished] gelir.
+ */
+@Composable
+fun ShrinkToIsland(spec: LaunchSpec, onSwallow: () -> Unit, onFinished: () -> Unit) {
+    val swallow by rememberUpdatedState(onSwallow)
+    val finished by rememberUpdatedState(onFinished)
+    val a = remember { Animatable(0f) }            // 0 = tam ekran, 1 = adanın altında küçük şekil
+    val fade = remember { Animatable(1f) }
+    var origin by remember { mutableStateOf(Offset.Zero) }
+    val ms = (SHRINK_BASE_MS / spec.speed.coerceIn(0.25f, 4f)).toInt()
+
+    LaunchedEffect(Unit) {
+        var fired = false
+        a.animateTo(1f, tween(ms, easing = ShrinkEasing)) {
+            if (!fired && value >= SWALLOW_AT) { fired = true; swallow() }
+        }
+        if (!fired) swallow()
+        fade.animateTo(0f, tween(SHRINK_FADE_MS))
+        finished()
+    }
+
+    Canvas(
+        Modifier.fillMaxSize()
+            .onGloballyPositioned { origin = it.positionOnScreen() }
+            .graphicsLayer { alpha = fade.value }
+    ) {
+        val d = density
+        val m = MARGIN_DP * d
+        val sw = size.width + 2 * m
+        val sh = size.height + 2 * m
+        val t = a.value
+
+        val w1 = START_W_DP * d
+        val h1 = START_H_DP * d
+        val cx1 = spec.cx
+        val cy1 = spec.top + spec.h + h1 * 0.15f
+        val w = sw * (w1 / sw).pow(t)                  // üstel küçülme: açılışın tersi
+        val h = sh * (h1 / sh).pow(t)
+        val cx = size.width / 2f + (cx1 - size.width / 2f) * t
+        val cy = size.height / 2f + (cy1 - size.height / 2f) * t
+        val radius = minOf(CORNER_DP * d, minOf(w, h) / 2f)
+
+        translate(-origin.x, -origin.y) {
+            if (t < 0.02f) {
+                drawRect(Color.Black, Offset(-m, -m), Size(sw, sh))
+            } else {
+                drawRoundRect(Color.Black, Offset(cx - w / 2f, cy - h / 2f), Size(w, h), CornerRadius(radius))
+            }
+        }
+    }
+}

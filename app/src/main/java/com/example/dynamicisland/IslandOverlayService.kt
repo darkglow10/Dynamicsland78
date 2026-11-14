@@ -163,6 +163,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     private fun handle(e: IslandEvent) {
         when (e) {
             is IslandEvent.AssistantChanged -> onAssistant(e.active)
+            is IslandEvent.AppSwitched -> onAppSwitched(e.from)
             is IslandEvent.Call -> onCall(e)
             is IslandEvent.CallEnded -> onCallEnded(e.key)
             is IslandEvent.Status -> if (!assistantActive && callKey == null) showTemporarily(e.content, e.holdMs)
@@ -607,6 +608,106 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         launchView = view; launchWm = host
         // Güvenlik: ne olursa olsun siyah katman ekranda kalmasın
         scope.launch { delay(5_000); if (launchView === view) removeLaunchView() }
+    }
+
+    // ---------------------------------------------------------------- Müzikten çıkış animasyonu
+    private val SWALLOW_HOLD_MS = 1_800L     // ada şarkıyı yuttuktan sonra açık kalma süresi
+    private var swallowView: ComposeView? = null
+    private var swallowWm: WindowManager? = null
+
+    /** Çalan şarkının uygulamasından çıkılınca: siyah panel adaya küçülür, ada şarkıyı gösterir. */
+    private fun onAppSwitched(from: String) {
+        val s = settings.value
+        if (!s.musicExitAnim || launching || swallowView != null) return
+        val m = lastMedia ?: return
+        if (!m.playing || callKey != null || assistantActive) return
+        val c = ui.value.content
+        if (c !is IslandContent.Media && c !is IslandContent.Idle) return
+        if (!isPlayingMediaApp(from)) return
+        startSwallowTransition()
+    }
+
+    /** [pkg], şu an çalan bir medya oturumunun uygulaması mı? (Bildirim erişimi açıksa okunabilir.) */
+    private fun isPlayingMediaApp(pkg: String): Boolean = runCatching {
+        val msm = getSystemService(android.media.session.MediaSessionManager::class.java)
+        msm.getActiveSessions(android.content.ComponentName(this, IslandNotificationListener::class.java))
+            .any { it.packageName == pkg && it.playbackState?.state == android.media.session.PlaybackState.STATE_PLAYING }
+    }.getOrDefault(false)
+
+    /** Panel adaya varınca ada açılır (şarkı görünür), sonra kapalı müzik haline döner. */
+    private fun swallowIsland() {
+        val m = lastMedia ?: return
+        val c = ui.value.content
+        if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
+        collapseJob?.cancel()
+        update { IslandUiState(m, expanded = true) }
+        scheduleCollapse(SWALLOW_HOLD_MS)
+    }
+
+    private fun startSwallowTransition() {
+        val s = settings.value
+        val sw = wm.currentWindowMetrics.bounds.width()
+        val chPx = dp(s.compactHeightDp)
+        val spec = LaunchSpec(
+            cx = sw / 2f + cutCenterXOffsetPx + dp(s.offsetXDp),
+            top = ((cutCenterYPx - chPx / 2).coerceAtLeast(0) + dp(s.offsetYDp)).toFloat(),
+            w = dp(compactWidthFor(s, false)).toFloat(),
+            h = chPx.toFloat(),
+            speed = s.favoriteLaunchSpeed,
+        )
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        lateinit var view: ComposeView
+        view = ComposeView(this).apply {
+            setViewTreeLifecycleOwner(this@IslandOverlayService)
+            setViewTreeSavedStateRegistryOwner(this@IslandOverlayService)
+            setContent {
+                ShrinkToIsland(
+                    spec,
+                    onSwallow = { runCatching { swallowIsland() } },
+                    onFinished = { handler.post { if (swallowView === view) removeSwallowView() } },
+                )
+            }
+        }
+        fun params(type: Int) = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT, type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+
+        var host: WindowManager = wm
+        var added = false
+        IslandAccessibilityService.instance?.let { a11y ->
+            runCatching {
+                val h2 = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
+                h2.addView(view, params(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY))
+                host = h2; added = true
+            }
+        }
+        if (!added) added = runCatching { wm.addView(view, params(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)) }.isSuccess
+        if (!added) { view.disposeComposition(); return }
+        swallowView = view; swallowWm = host
+        // Güvenlik: ne olursa olsun siyah katman ekranda kalmasın
+        scope.launch { delay(4_000); if (swallowView === view) removeSwallowView() }
+    }
+
+    private fun removeSwallowView() {
+        val v = swallowView
+        if (v != null) {
+            runCatching { (swallowWm ?: wm).removeView(v) }
+            v.disposeComposition()
+            v.setViewTreeLifecycleOwner(null)
+            v.setViewTreeSavedStateRegistryOwner(null)
+        }
+        swallowView = null; swallowWm = null
     }
 
     private fun removeLaunchView() {
@@ -1277,6 +1378,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         callTickJob?.cancel(); callEndJob?.cancel()
         runCatching { sideCall.hide() }
         runCatching { removeLaunchView() }
+        runCatching { removeSwallowView() }
         runCatching { detachStatusCover() }
         runCatching { detachEdgeGlow() }
         detachOutside()

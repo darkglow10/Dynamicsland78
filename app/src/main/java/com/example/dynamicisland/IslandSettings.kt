@@ -93,6 +93,7 @@ data class IslandSettings(
     val assistantEnabled: Boolean = true,
     val assistantWidthDp: Float = 150f,
     val assistantHeightDp: Float = 112f,
+    val musicExitAnim: Boolean = true,        // müzik uygulamasından çıkınca panel adaya küçülür, ada şarkıyı gösterir
     val assistantFullWidth: Boolean = false,  // ada kutusu yok; renkli animasyon ekranın solundan sağına uzanır
 
     // Gökkuşağı modu
@@ -200,7 +201,7 @@ class SettingsRepository(context: Context) {
 
         val IDLE = booleanPreferencesKey("idle")
         val FAV_ANIM = booleanPreferencesKey("fav_anim"); val FAV_SPD = floatPreferencesKey("fav_spd")
-        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim")
+        val NT_OPEN = booleanPreferencesKey("nt_open"); val NT_ANIM = booleanPreferencesKey("nt_anim"); val MX_ANIM = booleanPreferencesKey("mx_anim")
         val HIDE_SB = booleanPreferencesKey("hide_sb")
         val FAV_ON = booleanPreferencesKey("fav_on"); val FAV_TRIG = intPreferencesKey("fav_trig"); val FAV_PKGS = stringPreferencesKey("fav_pkgs")
         val AS_ON = booleanPreferencesKey("as_on"); val AS_W = floatPreferencesKey("as_w"); val AS_H = floatPreferencesKey("as_h"); val AS_FULL = booleanPreferencesKey("as_full")
@@ -271,6 +272,7 @@ class SettingsRepository(context: Context) {
             notifTapOpens = p[K.NT_OPEN] ?: d.notifTapOpens,
             hideStatusBar = p[K.HIDE_SB] ?: d.hideStatusBar,
             notifLaunchAnim = p[K.NT_ANIM] ?: d.notifLaunchAnim,
+            musicExitAnim = p[K.MX_ANIM] ?: d.musicExitAnim,
             assistantEnabled = p[K.AS_ON] ?: d.assistantEnabled,
             assistantWidthDp = p[K.AS_W] ?: d.assistantWidthDp,
             assistantHeightDp = p[K.AS_H] ?: d.assistantHeightDp,
@@ -326,7 +328,7 @@ class SettingsRepository(context: Context) {
 
             it[K.IDLE] = s.showIdle
             it[K.FAV_ANIM] = s.favoriteLaunchAnim; it[K.FAV_SPD] = s.favoriteLaunchSpeed
-            it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_ANIM] = s.notifLaunchAnim
+            it[K.NT_OPEN] = s.notifTapOpens; it[K.NT_ANIM] = s.notifLaunchAnim; it[K.MX_ANIM] = s.musicExitAnim
             it[K.HIDE_SB] = s.hideStatusBar
             it[K.FAV_ON] = s.favoritesEnabled; it[K.FAV_TRIG] = s.favoritesTrigger; it[K.FAV_PKGS] = s.favoritePkgs
             it[K.AS_ON] = s.assistantEnabled; it[K.AS_W] = s.assistantWidthDp; it[K.AS_H] = s.assistantHeightDp

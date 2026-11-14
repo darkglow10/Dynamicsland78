@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
+import android.view.inputmethod.InputMethodManager
 import androidx.core.app.NotificationManagerCompat
 
 /**
@@ -103,6 +104,27 @@ class IslandAccessibilityService : AccessibilityService() {
 
     private fun isAssist(p: String?) = p != null && p in ASSISTANT_PKGS
 
+    // ---- Ön plandaki uygulama takibi (müzik uygulamasından çıkış animasyonu için)
+    private var fgPkg: String? = null
+
+    /** Klavye, sistem diyalogları, asistan gibi "uygulamadan çıkış" sayılmayan geçici pencereler. */
+    private fun isTransientPkg(p: String): Boolean =
+        p == packageName || p in IGNORED_PKGS || isAssist(p) || p == "android" ||
+            p.contains("permissioncontroller") || p == "com.android.intentresolver" ||
+            p in imePackages()
+
+    private fun imePackages(): Set<String> = runCatching {
+        getSystemService(InputMethodManager::class.java).enabledInputMethodList.map { it.packageName }.toSet()
+    }.getOrDefault(emptySet())
+
+    private fun trackForeground(pkg: String) {
+        if (isTransientPkg(pkg)) return
+        val old = fgPkg
+        if (old == pkg) return
+        fgPkg = pkg
+        if (old != null) IslandBus.post(IslandEvent.AppSwitched(old, pkg))
+    }
+
     /**
      * Gemini / Asistan barı = olay sınıfı "Floaty" (FloatyActivity) olan pencere. Normal Google uygulaması
      * GoogleAppActivity ile açıldığı için bar sayılmaz. Pencere boyutuna bakılmaz (navigasyon çubuğu,
@@ -153,6 +175,7 @@ class IslandAccessibilityService : AccessibilityService() {
                 AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED, AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
                     val pkg = e.packageName?.toString()
                     if (e.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && pkg != null) {
+                        trackForeground(pkg)
                         if (isAssist(pkg)) {
                             evLog.addLast("$pkg ${e.className}")
                             while (evLog.size > 6) evLog.removeFirst()
