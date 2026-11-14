@@ -611,7 +611,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
     }
 
     // ---------------------------------------------------------------- Müzikten çıkış animasyonu
-    private val SWALLOW_HOLD_MS = 450L       // ada büyük kaldıktan sonra eski haline dönme süresi
+    private val SWALLOW_HOLD_MS = 320L       // ada büyük kaldıktan sonra eski haline dönme süresi
     private var swallowView: ComposeView? = null
     private var swallowWm: WindowManager? = null
 
@@ -640,6 +640,10 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         val m = lastMedia ?: return
         val c = ui.value.content
         if (!m.playing || (c !is IslandContent.Media && c !is IslandContent.Idle)) return
+        if (ui.value.swallow && ui.value.expanded) {   // zaten yutma halinde: pencereyi yeniden kurma (kayma olmasın)
+            scheduleCollapse(SWALLOW_HOLD_MS)
+            return
+        }
         collapseJob?.cancel()
         update { IslandUiState(m, expanded = true, swallow = true) }
         scheduleCollapse(SWALLOW_HOLD_MS)
@@ -1210,7 +1214,9 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
                 // Yutma efekti: pencere, büyüyen adanın boyutunda (tam açık panel kadar büyük değil)
                 val sz = swallowSizeDp(compactWidthFor(s, k.lyr), s.compactHeightDp, s.expandedWidthDp, s.expandedHeightDp + s.musicExtraDp())
                 setBlur(false, s)
-                setGeometry(dp(sz.first) + 2 * pad, dp(sz.second) + 2 * pad, xExp, y)
+                val sw2 = dp(sz.first) + 2 * pad
+                val maxSh = ((screenW - sw2) / 2).coerceAtLeast(0)
+                setGeometry(sw2, dp(sz.second) + 2 * pad, baseX.coerceIn(-maxSh, maxSh), y)
             }
             k.expanded && assistant && s.assistantFullWidth -> {
                 // Ada kutusu yok: pencere ekran genişliğinde, ada ile aynı üst hizada

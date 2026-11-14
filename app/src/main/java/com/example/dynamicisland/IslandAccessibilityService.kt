@@ -125,7 +125,7 @@ class IslandAccessibilityService : AccessibilityService() {
      */
     private fun trackForeground() {
         handler.removeCallbacks(fgCheck)
-        handler.postDelayed(fgCheck, 70)
+        handler.postDelayed(fgCheck, 15)
     }
 
     private fun activePkg(): String? {
