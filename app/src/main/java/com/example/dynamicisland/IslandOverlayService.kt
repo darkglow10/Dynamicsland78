@@ -616,11 +616,17 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
     // ---------------------------------------------------------------- Durum çubuğu örtüsü
     /**
-     * "Durum çubuğunu gizle": durum çubuğunun üstüne siyah, dokunmatik olmayan bir pencere çizilir.
+     * "Durum çubuğunu gizle": durum çubuğunun üstüne dokunmatik olmayan bir pencere çizilir.
+     * - "Cam efekti" açıksa (ve cihaz bulanıklığı destekliyorsa): buzlu cam. Pencerenin arkası bulanıklaştırılır,
+     *   üstüne hafif koyu bir ton biner; durum çubuğu simgeleri okunmaz hale gelir.
+     * - Aksi halde: düz siyah.
      * Yalnızca erişilebilirlik servisi bağlıyken çalışır (TYPE_ACCESSIBILITY_OVERLAY durum çubuğunun üstünde durur).
      */
-    private var statusCover: View? = null
-    private var statusCoverWm: WindowManager? = null
+    private var statusCoverDialog: Dialog? = null
+    private var statusCoverView: View? = null
+    private var coverAnim: android.animation.ValueAnimator? = null
+    private var coverT = 0f            // 0 = görünmez, 1 = tam
+    private var coverBlurPx = 0        // tam görünürken uygulanacak bulanıklık (0 = düz siyah mod)
 
     private fun statusBarHeightPx(): Int {
         val id = resources.getIdentifier("status_bar_height", "dimen", "android")
@@ -628,52 +634,80 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
         return maxOf(sb, cutCenterYPx * 2)
     }
 
-    private fun attachStatusCover() {
-        val a11y = IslandAccessibilityService.instance ?: return
-        val v = View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0f; visibility = View.INVISIBLE }
-        val lp = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT, statusBarHeightPx(),
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
-                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            fitInsetsTypes = 0
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
-        }
-        val host = a11y.getSystemService(WINDOW_SERVICE) as WindowManager
-        if (runCatching { host.addView(v, lp) }.isSuccess) {
-            statusCover = v; statusCoverWm = host
-            // Pencere yeniden kurulduysa mevcut duruma göre hemen uygula
-            if (settings.value.hideStatusBar && ui.value.content is IslandContent.Status) {
-                v.visibility = View.VISIBLE; v.alpha = 1f
-            }
+    private fun coverIsGlass(): Boolean =
+        Build.VERSION.SDK_INT >= 31 && settings.value.glassEnabled && wm.isCrossWindowBlurEnabled
+
+    /** Örtünün rengini ve bulanıklığını moda göre ayarlar (cam: ince koyu ton + bulanıklık, değilse düz siyah). */
+    private fun styleCover() {
+        val glass = coverIsGlass()
+        coverBlurPx = if (glass) COVER_BLUR_PX else 0
+        statusCoverView?.setBackgroundColor(Color.argb(if (glass) COVER_GLASS_TINT else 255, 0, 0, 0))
+    }
+
+    private fun applyCover(t: Float) {
+        coverT = t
+        statusCoverView?.alpha = t
+        if (Build.VERSION.SDK_INT >= 31) {
+            statusCoverDialog?.window?.setBackgroundBlurRadius((coverBlurPx * t).toInt())
         }
     }
 
+    private fun attachStatusCover() {
+        val a11y = IslandAccessibilityService.instance ?: return
+        val v = View(this).apply { setBackgroundColor(Color.BLACK); alpha = 0f }
+        val d = Dialog(ContextThemeWrapper(a11y, android.R.style.Theme_Translucent_NoTitleBar))
+        d.setCancelable(false)
+        d.setCanceledOnTouchOutside(false)
+        d.setContentView(v, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        d.window?.apply {
+            setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            addFlags(
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+            )
+            setGravity(Gravity.TOP or Gravity.START)
+            setDecorFitsSystemWindows(false)
+            decorView.setPadding(0, 0, 0, 0)
+            val lp = WindowManager.LayoutParams().also { it.copyFrom(attributes) }
+            lp.width = WindowManager.LayoutParams.MATCH_PARENT
+            lp.height = statusBarHeightPx()
+            lp.x = 0; lp.y = 0
+            lp.format = PixelFormat.TRANSLUCENT
+            lp.fitInsetsTypes = 0
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            attributes = lp
+        }
+        d.window?.decorView?.let { stripInsets(it) }
+        if (!runCatching { d.show() }.isSuccess) return
+        d.window?.decorView?.let { stripInsets(it) }
+        statusCoverDialog = d; statusCoverView = v
+        // Pencere yeniden kurulduysa mevcut duruma göre hemen uygula
+        styleCover()
+        applyCover(if (settings.value.hideStatusBar && ui.value.content is IslandContent.Status) 1f else 0f)
+    }
+
     private fun setStatusCover(show: Boolean) {
-        val v = statusCover ?: return
-        v.animate().cancel()
-        if (show) {
-            v.visibility = View.VISIBLE
-            v.animate().alpha(1f).setDuration(200).start()
-        } else {
-            v.animate().alpha(0f).setDuration(220).withEndAction { v.visibility = View.INVISIBLE }.start()
+        if (statusCoverView == null) return
+        coverAnim?.cancel()
+        if (show) styleCover()
+        coverAnim = android.animation.ValueAnimator.ofFloat(coverT, if (show) 1f else 0f).apply {
+            duration = if (show) 200 else 220
+            addUpdateListener { applyCover(it.animatedValue as Float) }
+            start()
         }
     }
 
     private fun detachStatusCover() {
-        val v = statusCover
-        if (v != null) {
-            v.animate().cancel()
-            runCatching { (statusCoverWm ?: wm).removeView(v) }
-        }
-        statusCover = null; statusCoverWm = null
+        coverAnim?.cancel(); coverAnim = null
+        runCatching { statusCoverDialog?.dismiss() }
+        statusCoverDialog = null; statusCoverView = null
+        coverT = 0f
     }
 
     private fun detachOverlay() {
@@ -1085,3 +1119,7 @@ class IslandOverlayService : LifecycleService(), SavedStateRegistryOwner {
 
 /** Ana Sayfa > Dene bölümündeki sahte arama olayının anahtarı. */
 const val DEMO_CALL_KEY = "demo_call"
+
+/** Durum çubuğu örtüsü (cam modu): arka plan bulanıklığı (px) ve koyu ton (0..255). */
+private const val COVER_BLUR_PX = 120
+private const val COVER_GLASS_TINT = 110
