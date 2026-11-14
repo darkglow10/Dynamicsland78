@@ -4,7 +4,6 @@ import android.app.Dialog
 import android.content.Context
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
-import android.os.Build
 import android.view.ContextThemeWrapper
 import android.view.Gravity
 import android.view.View
@@ -44,7 +43,6 @@ data class SideCallPrefs(
     val enabled: Boolean = false,
     val side: Int = 1,               // 0 = sol, 1 = sağ, 2 = ikisi de
     val transparency: Float = 0.25f, // 0 = tam siyah, 1 = tamamen saydam
-    val blurDp: Int = 20,            // arka plan bulanıklığı (0 = kapalı)
 )
 
 /** Ayarlar SharedPreferences'ta saklanır; uygulama ve servis aynı akışı paylaşır. */
@@ -66,7 +64,7 @@ object SideCallStore {
         runCatching {
             ctx.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
                 .putBoolean("enabled", n.enabled).putInt("side", n.side)
-                .putFloat("transparency", n.transparency).putInt("blurDp", n.blurDp).apply()
+                .putFloat("transparency", n.transparency).apply()
         }
     }
 
@@ -77,7 +75,6 @@ object SideCallStore {
             enabled = sp.getBoolean("enabled", d.enabled),
             side = sp.getInt("side", d.side).coerceIn(0, 2),
             transparency = sp.getFloat("transparency", d.transparency).coerceIn(0f, 1f),
-            blurDp = sp.getInt("blurDp", d.blurDp).coerceIn(0, 60),
         )
     }
 }
@@ -85,7 +82,7 @@ object SideCallStore {
 // ---------------------------------------------------------------- Kenar penceresi
 /**
  * Gelen aramada ekranın sol / sağ kenarında (ya da ikisinde) dikey Cevapla / Reddet kapsülü gösterir.
- * Her kenar için ayrı küçük bir overlay penceresi açılır; bulanıklık pencere arkasına uygulanır.
+ * Her kenar için ayrı küçük bir overlay penceresi açılır.
  */
 class SideCallOverlay(
     private val ctx: Context,
@@ -147,7 +144,6 @@ class SideCallOverlay(
         dlg.setContentView(view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         dlg.window?.apply {
             setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
-            // Bulanıklık bu arka planın şekline göre kırpılır: yuvarlak köşeli kapsül
             setBackgroundDrawable(GradientDrawable().apply {
                 setColor(android.graphics.Color.TRANSPARENT)
                 cornerRadius = dp(SIDE_W_DP / 2f).toFloat()
@@ -176,9 +172,6 @@ class SideCallOverlay(
         dlg.window?.decorView?.let { stripInsets(it) }
         val e = Entry(dlg, view, w, h, dp(SIDE_MARGIN_DP), y)
         applyGeometry(e)
-        if (Build.VERSION.SDK_INT >= 31 && p.blurDp > 0 && wm.isCrossWindowBlurEnabled) {
-            dlg.window?.setBackgroundBlurRadius(dp(p.blurDp.toFloat()))
-        }
         scheduleCalibrate(e)
         return e
     }
@@ -271,14 +264,10 @@ fun SideCallSettingsSection() {
             SubHeader("Konum")
             SegmentedTabs(listOf("Sol", "Sağ", "İkisi de"), p.side) { i -> SideCallStore.update(ctx) { it.copy(side = i) } }
             SectionDivider()
-            SubHeader("Arka plan siyahtır; şeffaflığı ve bulanıklığı ayarla")
+            SubHeader("Arka plan siyahtır; şeffaflığı ayarla")
             SliderRow("Şeffaflık", p.transparency, 0f..1f, "%${(p.transparency * 100).roundToInt()}") { v ->
                 SideCallStore.update(ctx) { it.copy(transparency = v) }
             }
-            SliderRow("Bulanıklık", p.blurDp.toFloat(), 0f..60f, if (p.blurDp == 0) "Kapalı" else "${p.blurDp}") { v ->
-                SideCallStore.update(ctx) { it.copy(blurDp = v.roundToInt()) }
-            }
-            SubHeader("Bulanıklık Android 12 ve üstünde, cihaz destekliyorsa çalışır.")
         }
     }
 }
