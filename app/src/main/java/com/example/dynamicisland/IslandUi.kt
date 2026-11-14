@@ -481,17 +481,17 @@ fun IslandPill(
             Box(Modifier.requiredSize(geo.cw, geo.ch).align(Alignment.TopCenter)) {
                 val fade = Modifier.graphicsLayer { alpha = (1f - progress.mean * 2f).coerceIn(0f, 1f) }
                 Row(
-                    Modifier.fillMaxSize().padding(start = 14.dp, end = 14.dp).then(fade),
+                    Modifier.fillMaxSize().padding(start = 9.dp, end = 14.dp).then(fade),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    PhoneIcon(0f, Modifier.size(15.dp), CallGreen)
-                    Spacer(Modifier.width(5.dp))
+                    PhoneIcon(0f, Modifier.size(12.dp), CallGreen)
+                    Spacer(Modifier.width(4.dp))
                     Text(
                         content.duration ?: "0:00", color = CallGreen, fontWeight = FontWeight.Medium,
-                        fontSize = 14.sp, maxLines = 1,
+                        fontSize = 12.sp, maxLines = 1,
                     )
                     Spacer(Modifier.weight(1f))
-                    CallWave(Modifier.width(42.dp).height((geo.ch - 12.dp).coerceAtLeast(10.dp)))
+                    CallWave(Modifier.width(34.dp).height((geo.ch - 16.dp).coerceAtLeast(10.dp)))
                 }
             }
         }
