@@ -758,13 +758,20 @@ private fun PhoneIcon(rotation: Float, modifier: Modifier = Modifier) {
     }
 }
 
+// Cevapla / Reddet düğmeleri: canlı kırmızı ve yeşil, üstten alta hafif renk geçişi
+private val AnswerTop = Color(0xFF45DB4F)
+private val AnswerBottom = Color(0xFF1FB52F)
+private val DeclineTop = Color(0xFFFF4437)
+private val DeclineBottom = Color(0xFFE01409)
+
 @Composable
-private fun CallButton(color: Color, rotation: Float, size: Dp, onClick: () -> Unit) {
+private fun CallButton(top: Color, bottom: Color, rotation: Float, size: Dp, onClick: () -> Unit) {
     Box(
         Modifier
             .size(size)
             .clip(CircleShape)
-            .background(color, CircleShape)
+            .background(Brush.verticalGradient(listOf(top, bottom)), CircleShape)
+            .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -772,7 +779,7 @@ private fun CallButton(color: Color, rotation: Float, size: Dp, onClick: () -> U
             ),
         contentAlignment = Alignment.Center,
     ) {
-        PhoneIcon(rotation, Modifier.size(size * 0.46f))
+        PhoneIcon(rotation, Modifier.size(size * 0.50f))
     }
 }
 
@@ -839,9 +846,9 @@ private fun CallContent(
         }
 
         // Butonlar: kırmızı (reddet / kapat) + gelen aramada yeşil (cevapla)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            CallButton(CallRed, 135f, if (incoming) 46.dp else 48.dp, onDecline)
-            if (incoming) CallButton(CallGreen, 0f, 46.dp, onAnswer)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            CallButton(DeclineTop, DeclineBottom, 135f, if (incoming) 52.dp else 50.dp, onDecline)
+            if (incoming) CallButton(AnswerTop, AnswerBottom, 0f, 52.dp, onAnswer)
         }
     }
 }
